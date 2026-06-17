@@ -28,13 +28,16 @@ Release targets: darwin/arm64, darwin/amd64, linux/amd64, linux/arm64, windows/a
 
 | Language | LOC | Files | % |
 |----------|-----|-------|---|
-| Go | 1782 | 28 | 73% |
-| Markdown | 614 | 16 | 25% |
-| JSON | 34 | 3 | 1% |
+| Go | 1782 | 28 | 58% |
+| Markdown | 1176 | 40 | 38% |
+| JSON | 62 | 4 | 2% |
+| YAML | 42 | 1 | 1% |
 
 ## DevOps & CI
 
-No CI configuration present. Release cross-compilation handled locally via `make release`.
+CI: GitHub Actions (`.github/workflows/ci.yml`), triggers on push to `main`/`master` and all pull requests.
+Gate order: `gofmt` (format check on `cmd/` and `internal/`) → `go vet ./...` → `go test ./...` → `make build` → `./bin/apex doctor` → `./bin/apex validate`.
+No deployment pipeline — release cross-compilation handled locally via `make release`.
 
 ---
 
@@ -43,7 +46,7 @@ No CI configuration present. Release cross-compilation handled locally via `make
 | Domain | Repo paths | One-liner | Detail |
 |--------|------------|-----------|--------|
 | backbone | cmd/apex/, internal/, go.mod, Makefile | Go CLI (`apex` v0.2.0): signals scan, health score, bash guard, session-start hook, doctor, followups, reminders, validate, docs gate | .claude/project/signals/backbone.md |
-| plugin | .claude-plugin/, agents/, commands/, skills/, output-styles/, hooks/ | Claude Code plugin (`apex-claude` v0.1.0): 10 workflow agents (builder, investigator, reviewer, strategist, signals-inferrer, git-scout, haiku, debug, plan, writer), TDD/commit skills, ship command, output style, hook wiring | .claude/project/signals/plugin.md |
+| plugin | .claude-plugin/, agents/, commands/, skills/, output-styles/, hooks/, CLAUDE.md | Claude Code plugin (`apex-claude` v0.1.0): 10 agents, 6 skills, 21 commands — full lifecycle roster (plan/implement/ship/diagnose/docs/signals/help); SessionStart + PreToolUse hooks | .claude/project/signals/plugin.md |
 
 ## Cross-cutting
 
@@ -51,5 +54,5 @@ No CI configuration present. Release cross-compilation handled locally via `make
 - Project state files live in `.claude/project/`: `deterministic-signals.md` (scan output), `health.md` (integrity score), `doc-surfaces.md` (docs cache), `followups/` (ledger), `reminders/` (due nudges)
 - Deterministic substrate: `.claude/project/deterministic-signals.md` (written by `apex signals scan`)
 - Domain partitioning basis: backbone groups all Go packages + CLI dispatcher (what runs deterministically in hooks/CI); plugin groups all Claude Code artifacts (what Claude reads and interprets)
-- Cross-domain coupling: `hooks/hooks.json` (plugin domain) invokes `${CLAUDE_PLUGIN_ROOT}/bin/apex hooks pre-bash` (backbone domain); `internal/doctor` (backbone) validates presence of plugin artifact directories
-- `CLAUDE.md` at repo root contains `@.claude/project/signals.md` inside an `<atomic-signals>` block — @-ref wiring is active
+- Cross-domain coupling: `hooks/hooks.json` (plugin domain) invokes `${CLAUDE_PLUGIN_ROOT}/bin/apex hooks pre-bash` and `${CLAUDE_PLUGIN_ROOT}/bin/apex hooks session-start` (backbone domain); `internal/doctor` (backbone) validates presence of plugin artifact directories; CI runs `./bin/apex doctor` and `./bin/apex validate` as final gates
+- `CLAUDE.md` at repo root carries the full Apex spine (principles, determinism boundary, lifecycle, agent/skill/command registries) plus `@.claude/project/signals.md` inside an `<atomic-signals>` block — @-ref wiring is active
