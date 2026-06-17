@@ -1,10 +1,14 @@
 BINARY := bin/apex
 PKG    := ./cmd/apex
 
-.PHONY: build test fmt vet clean release
+.PHONY: build test fmt vet clean release install
 
 build:
 	go build -trimpath -ldflags "-s -w" -o $(BINARY) $(PKG)
+
+# Build + register + enable the plugin and install the Apex output style.
+install:
+	bash scripts/install.sh
 
 test:
 	go test ./...
