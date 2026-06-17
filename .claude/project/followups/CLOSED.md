@@ -1,0 +1,2 @@
+- 005 — Makefile: install in .PHONY has no recipe (closed)
+- 006 — README stale: references wp-* names, actual files are ax-* (Phase 6 rewrite) (closed)
