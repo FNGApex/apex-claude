@@ -1,0 +1,9 @@
+{"hooks":{"SessionStart":[{
+  "hooks": [
+    {
+      "command": "atomic hooks session-start",
+      "type": "command"
+    }
+  ],
+  "matcher": ".*"
+}]}}

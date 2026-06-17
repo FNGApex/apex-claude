@@ -1,0 +1,16 @@
+# compiled binaries — built via `make build` / `make release`
+/bin/
+
+# Go build/test artifacts
+*.test
+*.out
+
+# generated project-state caches (followups/ stays committed)
+.claude/project/deterministic-signals.md
+.claude/project/health.md
+.claude/project/doc-surfaces.md
+.claude/project/*.prev
+tmp/
+.claude/.scratchpad/
+.worktrees/
+.claude/project/.deterministic-signals.prev.md
