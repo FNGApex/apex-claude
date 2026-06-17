@@ -55,4 +55,4 @@ No deployment pipeline — release cross-compilation handled locally via `make r
 - Deterministic substrate: `.claude/project/deterministic-signals.md` (written by `apex signals scan`)
 - Domain partitioning basis: backbone groups all Go packages + CLI dispatcher (what runs deterministically in hooks/CI); plugin groups all Claude Code artifacts (what Claude reads and interprets)
 - Cross-domain coupling: `hooks/hooks.json` (plugin domain) invokes `${CLAUDE_PLUGIN_ROOT}/bin/apex hooks pre-bash` and `${CLAUDE_PLUGIN_ROOT}/bin/apex hooks session-start` (backbone domain); `internal/doctor` (backbone) validates presence of plugin artifact directories; CI runs `./bin/apex doctor` and `./bin/apex validate` as final gates
-- `CLAUDE.md` at repo root carries the full Apex spine (principles, determinism boundary, lifecycle, agent/skill/command registries) plus `@.claude/project/signals.md` inside an `<atomic-signals>` block — @-ref wiring is active
+- `CLAUDE.md` at repo root carries the full Apex spine (principles, determinism boundary, lifecycle, agent/skill/command registries) plus `@.claude/project/signals.md` inside an `<apex-signals>` block — @-ref wiring is active

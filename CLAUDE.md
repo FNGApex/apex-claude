@@ -71,10 +71,10 @@ per dispatch; summons any subagent except ax-builder), `ax-writer` (opus, prose 
 **Backbone** (`apex <cmd>`): `signals scan|show|stale`, `health show|set`, `followups`, `reminder`,
 `hooks pre-bash|session-start`, `doctor`, `validate`, `docs scan|stale`. Run `apex <cmd>` for usage.
 
-<atomic-signals>
+<apex-signals>
 
 ## Project signals (auto-loaded)
 
 @.claude/project/signals.md
 
-</atomic-signals>
+</apex-signals>

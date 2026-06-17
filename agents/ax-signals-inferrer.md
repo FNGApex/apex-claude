@@ -25,7 +25,7 @@ You keep the project signal-aware without hallucinating. Determinism comes from 
    On a large repo, dispatch one ax-investigator per candidate domain for a file:line map.
 3. Author `.claude/project/signals.md`: framework/runtime, build·test·lint table, language
    breakdown, domains table (with per-domain detail pointers), cross-cutting notes.
-4. Wire `@.claude/project/signals.md` into CLAUDE.md under an `<atomic-signals>`/signals block if absent.
+4. Wire `@.claude/project/signals.md` into CLAUDE.md under an `<apex-signals>` block if absent.
 5. Run `apex signals stale` to confirm freshness; report exit code.
 </workflow>
 
