@@ -28,9 +28,9 @@ Release targets: darwin/arm64, darwin/amd64, linux/amd64, linux/arm64, windows/a
 
 | Language | LOC | Files | % |
 |----------|-----|-------|---|
-| Go | 770 | 15 | 69% |
-| Markdown | 310 | 8 | 27% |
-| JSON | 34 | 3 | 11% |
+| Go | 1782 | 28 | 73% |
+| Markdown | 614 | 16 | 25% |
+| JSON | 34 | 3 | 1% |
 
 ## DevOps & CI
 
@@ -43,7 +43,7 @@ No CI configuration present. Release cross-compilation handled locally via `make
 | Domain | Repo paths | One-liner | Detail |
 |--------|------------|-----------|--------|
 | backbone | cmd/apex/, internal/, go.mod, Makefile | Go CLI (`apex` v0.2.0): signals scan, health score, bash guard, session-start hook, doctor, followups, reminders, validate, docs gate | .claude/project/signals/backbone.md |
-| plugin | .claude-plugin/, agents/, commands/, skills/, output-styles/, hooks/ | Claude Code plugin (`apex-claude` v0.1.0): workflow agents, TDD/commit skills, ship command, output style, hook wiring | .claude/project/signals/plugin.md |
+| plugin | .claude-plugin/, agents/, commands/, skills/, output-styles/, hooks/ | Claude Code plugin (`apex-claude` v0.1.0): 10 workflow agents (builder, investigator, reviewer, strategist, signals-inferrer, git-scout, haiku, debug, plan, writer), TDD/commit skills, ship command, output style, hook wiring | .claude/project/signals/plugin.md |
 
 ## Cross-cutting
 
@@ -52,4 +52,4 @@ No CI configuration present. Release cross-compilation handled locally via `make
 - Deterministic substrate: `.claude/project/deterministic-signals.md` (written by `apex signals scan`)
 - Domain partitioning basis: backbone groups all Go packages + CLI dispatcher (what runs deterministically in hooks/CI); plugin groups all Claude Code artifacts (what Claude reads and interprets)
 - Cross-domain coupling: `hooks/hooks.json` (plugin domain) invokes `${CLAUDE_PLUGIN_ROOT}/bin/apex hooks pre-bash` (backbone domain); `internal/doctor` (backbone) validates presence of plugin artifact directories
-- No CLAUDE.md exists in this repo — `@-ref` wiring for signals.md has not been done
+- `CLAUDE.md` at repo root contains `@.claude/project/signals.md` inside an `<atomic-signals>` block — @-ref wiring is active
