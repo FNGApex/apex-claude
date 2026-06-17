@@ -1,104 +1,124 @@
-# Workflow Protocol
+# Apex Claude
 
-A personal Claude Code agent layer, packaged as a plugin. It encodes a coding loop —
-plan, build with tests, review, ship — across the mechanisms Claude Code exposes for
-customization.
+Apex Claude is a Claude Code plugin that encodes a full coding workflow: plan, build with
+tests, review, ship, and improve. It pairs a set of agents, skills, slash commands, an output
+style, and a hook with a small Go backbone binary (`apex`) that does the deterministic work.
 
-This is a skeleton meant to be grown, not a finished system. Each piece is intentionally
-small so you can see how the parts connect before adding your own.
+The guiding split runs through everything here. The binary owns determinism: scanning the repo,
+linting artifacts, gating on staleness, detecting state, scoring health. The model owns judgment:
+classification, drafting, design, and the decision about whether a change is actually correct.
+When code can answer a question, code answers it. The model is reserved for the calls that need
+reasoning.
 
-## What's here
+## How the layer is organized
 
-| Path | Mechanism | Job |
-|------|-----------|-----|
+| Surface | Mechanism | Job |
+|---------|-----------|-----|
 | `.claude-plugin/plugin.json` | Plugin manifest | Names and versions the bundle |
-| `output-styles/protocol.md` | Output style | How Claude talks: signal-first, terse |
-| `agents/wp-investigator.md` | Subagent (haiku, read-only) | Locate code, return `file:line` tables |
-| `agents/wp-builder.md` | Subagent (sonnet) | Implement one slice, test-first |
-| `agents/wp-reviewer.md` | Subagent (sonnet, read-only) | Review a diff, emit a `VERDICT:` line |
-| `skills/wp-tdd/SKILL.md` | Skill | Test-first discipline, auto-triggers |
-| `skills/wp-commit/SKILL.md` | Skill | Conventional Commits message generator |
-| `commands/wp-ship.md` | Slash command | Review the diff, gate on verdict, then commit |
-| `hooks/hooks.json` | Hook | Wires the `PreToolUse(Bash)` guard to the compiled CLI |
-| `cmd/wp/` → `bin/wp` | Go CLI | Deterministic backbone: the hook guard + `doctor` |
+| `output-styles/protocol.md` | Output style (Apex) | How Claude talks: article-dropping, signal-first, tiered |
+| `agents/ax-*.md` | Subagents | Locate, build, review, reason, plan, debug, write, run |
+| `skills/ax-*/SKILL.md` | Skills | Test-first, commit, verify, review, documentation, prose voice |
+| `commands/ax-*.md` | Slash commands | The lifecycle verbs, from setup through ship and improve |
+| `hooks/hooks.json` | Hooks | PreToolUse(Bash) guard and SessionStart context, wired to the binary |
+| `cmd/apex/` to `bin/apex` | Go CLI | The deterministic backbone |
 
-## How the pieces relate
+## The lifecycle
 
-The command orchestrates; skills carry policy; agents do isolated work; the hook enforces.
+The commands follow one loop. Each verb is small and self-describing in the slash listing.
 
-```
-/wp-ship  ──dispatches──►  wp-reviewer  ──VERDICT──►  gate
-   │                                                   │ PASS
-   └──uses skill──►  wp-commit  ◄──────────────────────┘
-hooks  ──run regardless of the model──►  block destructive Bash
-```
+1. **Plan.** `/ax-plan` researches the task across the codebase and online, then writes a design
+   doc and a checkpoint spec. Trivial work gets an inline spec instead. `/ax-pressure-test`
+   challenges a design before you commit to it.
+2. **Implement.** `/ax-implement` runs the implement and review loop: it briefs a fresh-context
+   builder, gates each iteration on the reviewer's confidence score, and commits per green pass.
+   `/ax-diagnose` covers failure-driven work, starting from a broken test or a symptom.
+3. **Ship.** Pick the verb that matches how far you want to go: `/ax-ship`, `/ax-push`,
+   `/ax-pr`, `/ax-merge`, or `/ax-squash`.
+4. **Sync docs.** `/ax-documentation` keeps the human-facing surfaces current. Ship verbs run
+   its maintenance mode automatically.
+5. **Improve.** `/ax-improve` mines a session for friction and turns it into concrete fixes.
+   `/ax-help` routes you to the right verb when you are unsure.
 
-The split that matters: the output style, skills, and agents are *contextual* — Claude
-reads them and usually complies. The hook is *deterministic* — it runs no matter what the
-model decides, and it can block. Put anything that must happen in the hook layer; put
-judgment and voice everywhere else.
+`/ax-autopilot` runs the whole loop hands-off, with one human decision: how to merge.
 
-The deterministic work itself lives in a compiled Go CLI (`bin/wp`), not in shell or
-markdown. A single static binary with zero runtime dependencies: it starts in
-milliseconds (so it can sit in a hook), cross-compiles to every platform, and returns
-real exit codes that commands branch on. The markdown owns judgment; the binary owns
-determinism.
+## The orchestrator owns the truth
 
-## Try it
+Subagents never claim a task is done. They gather evidence and report it up. The orchestrator,
+the main loop you talk to, owns final verification, finds the fix when something is wrong, and
+makes every gate decision.
 
-This loads in place via the skills directory — no install step:
+Reviewers and documentation checks reflect this. Instead of a binary pass or fail verdict, they
+emit a confidence score from 0 to 100 and flag problems without prescribing the fix. Findings
+carry four severity tiers: blocker, risk, nit, and uncertain. The orchestrator aggregates those
+scores into a persisted repo health signal that `apex health` reads and `apex doctor` checks.
 
-```
-claude --skills-dir /home/bear/GitHub/claudeWorkflowProtocol
-```
+## Two voices
 
-Then:
+Claude's replies in the terminal use the Apex output style: article-dropping, structural forms
+by default, with intensity tiers (lite, full, ultra) you can switch mid-session. Security
+warnings and irreversible-action confirmations always revert to full prose so nothing critical
+gets compressed away.
 
-- `/config` → Output style → Protocol
-- Ask "where is X defined" and watch `wp-investigator` get dispatched
-- Make a change, then run `/wp-ship`
+Enduring narrative documentation, like this README and anything under `docs/guides/`, uses the
+opposite voice through the `ax-explainer` module: clear, expansive, and detailed. Everything
+else, including specs, design docs, and signals files, stays terse and technical.
 
-To package it for real distribution later, publish to a marketplace and install with
-`claude plugin install workflow-protocol@<marketplace>`.
+## The backbone
 
-## The CLI
-
-Built with Go (stdlib only, no external dependencies):
-
-```bash
-make build      # -> bin/wp (static binary)
-make test       # unit tests for the hook guard
-make release    # cross-compile bin/<os>-<arch>/wp for mac/linux/windows
-```
-
-Subcommands:
+The deterministic work lives in a single static Go binary built from the standard library with
+no external dependencies. It starts in milliseconds, which is what lets it sit inside a hook,
+and it returns real exit codes that commands branch on.
 
 ```bash
-wp hooks pre-bash   # PreToolUse(Bash) guard; reads hook JSON on stdin
-wp doctor           # integrity check on the plugin layout (exit 1 on failure)
-wp version
+make build      # -> bin/apex (static binary)
+make test       # go test ./...
+make vet        # go vet ./...
+make fmt        # gofmt -w cmd internal
+make release    # cross-compile bin/<os>-<arch>/apex for mac, linux, windows
 ```
 
-Test the guard directly:
+The subcommand groups:
 
 ```bash
-echo '{"tool_input":{"command":"rm -rf ~"}}' | bin/wp hooks pre-bash; echo "exit=$?"
+apex signals scan|show|stale     # deterministic project map + staleness gate
+apex health show|set             # repo health/integrity score
+apex followups list|add|close|render|path
+apex reminder add|list|show|rm|due
+apex hooks pre-bash|session-start
+apex doctor                      # integrity check on the plugin layout + project state
+apex validate                    # lint artifacts and specs (exit 1 on issues)
+apex docs scan|stale             # documentation-surface cache and staleness gate
+apex version
+```
+
+Test the Bash guard directly:
+
+```bash
+echo '{"tool_input":{"command":"rm -rf ~"}}' | bin/apex hooks pre-bash; echo "exit=$?"
 # exit=2 with a deny payload
 
-echo '{"tool_input":{"command":"npm test"}}' | bin/wp hooks pre-bash; echo "exit=$?"
+echo '{"tool_input":{"command":"go test ./..."}}' | bin/apex hooks pre-bash; echo "exit=$?"
 # exit=0, no output (allowed)
 ```
 
-The deny list is deliberately narrow: `rm -rf` on root/home, `--force` push to
-main/master, and piping a remote script into a shell. Widen it in `cmd/wp/hooks.go`
-(and add a case to `hooks_test.go`) as you learn which mistakes you actually make.
+The deny list is deliberately narrow: `rm -rf` on root or home, force-pushing to main or master,
+and piping a remote script into a shell. Widen it as you learn which mistakes you actually make.
 
-> The compiled binary is gitignored. Run `make build` after cloning so the hook has
-> something to call; ship per-platform binaries via `make release` + GitHub Releases.
+> The compiled binary is gitignored. Run `make build` after cloning so the hook has something to
+> call, and ship per-platform binaries through `make release` plus GitHub Releases.
 
-## Where to grow next
+## Installing and adopting
 
-- A `wp-plan` command that writes a brief, then drives `wp-builder` → `wp-reviewer` in a loop.
-- A `SessionStart` hook (`wp hooks session-start`) that injects project context.
-- More `wp` subcommands for deterministic work — signal scans, staleness checks,
-  a follow-ups ledger — each returning exit codes the commands branch on.
+Enable the plugin through a marketplace, or load it in place during development. After the plugin
+is enabled, build the binary so the hooks have something to invoke:
+
+```bash
+make build
+apex doctor
+```
+
+A Claude Code plugin cannot ship an always-on instruction file. The Apex spine, which holds the
+principles, the determinism boundary, the lifecycle, and the artifact registries, lives in this
+repo's `CLAUDE.md`. To adopt Apex's conventions in another project, copy the spine sections from
+`CLAUDE.md` into that project's `.claude/CLAUDE.md`, or into `~/.claude/CLAUDE.md` for user-wide
+use. In this repo the spine auto-loads, so Apex builds itself under its own rules.

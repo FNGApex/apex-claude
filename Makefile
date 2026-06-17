@@ -1,7 +1,7 @@
 BINARY := bin/apex
 PKG    := ./cmd/apex
 
-.PHONY: build test fmt vet clean install
+.PHONY: build test fmt vet clean release
 
 build:
 	go build -trimpath -ldflags "-s -w" -o $(BINARY) $(PKG)
@@ -10,7 +10,7 @@ test:
 	go test ./...
 
 fmt:
-	gofmt -w cmd
+	gofmt -w cmd internal
 
 vet:
 	go vet ./...
