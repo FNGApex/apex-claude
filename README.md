@@ -1,8 +1,10 @@
 # Apex Claude
 
-Apex Claude is a Claude Code plugin that encodes a full coding workflow: plan, build with
+Apex Claude is a Claude Code workflow layer that encodes a full coding loop: plan, build with
 tests, review, ship, and improve. It pairs a set of agents, skills, slash commands, an output
-style, and a hook with a small Go backbone binary (`apex`) that does the deterministic work.
+style, and a hook with a small Go backbone binary (`apex`) that does the deterministic work. It
+installs as loose `~/.claude/` artifacts (bare `/ax-*` commands); a plugin manifest is also
+included for marketplace installs.
 
 The guiding split runs through everything here. The binary owns determinism: scanning the repo,
 linting artifacts, gating on staleness, detecting state, scoring health. The model owns judgment:
@@ -109,16 +111,30 @@ and piping a remote script into a shell. Widen it as you learn which mistakes yo
 
 ## Installing and adopting
 
-Enable the plugin through a marketplace, or load it in place during development. After the plugin
-is enabled, build the binary so the hooks have something to invoke:
+Install Apex as loose user-level artifacts with one command:
 
 ```bash
-make build
-apex doctor
+make install      # or: scripts/install.sh
 ```
 
-A Claude Code plugin cannot ship an always-on instruction file. The Apex spine, which holds the
-principles, the determinism boundary, the lifecycle, and the artifact registries, lives in this
-repo's `CLAUDE.md`. To adopt Apex's conventions in another project, copy the spine sections from
-`CLAUDE.md` into that project's `.claude/CLAUDE.md`, or into `~/.claude/CLAUDE.md` for user-wide
-use. In this repo the spine auto-loads, so Apex builds itself under its own rules.
+This builds the `apex` binary, copies the commands, agents, skills, and output style into
+`~/.claude/`, drops the binary at `~/.claude/bin/apex`, and wires the `SessionStart` and
+`PreToolUse` hooks into `~/.claude/settings.json` without disturbing any of your other settings.
+Restart Claude Code afterward, then activate the voice with `/output-style Apex`.
+
+Apex installs as loose files rather than as a Claude Code plugin on purpose. Plugin commands are
+namespaced by the harness, so a plugin install surfaces them as `/apex-claude:ax-plan`; loose
+user-level artifacts are not namespaced, so the same command is just `/ax-plan`. The cost of the
+loose model is that there is no plugin enable/disable/update lifecycle: `scripts/install.sh` owns
+installation and `scripts/uninstall.sh` (or `make uninstall`) owns removal. Re-run the installer
+after any code change to refresh the installed binary.
+
+The repo still carries a `.claude-plugin/` manifest, so you can register it as a marketplace and
+`claude plugin install apex-claude@apex-claude` instead if you prefer the plugin lifecycle and do
+not mind the namespace prefix.
+
+The Apex spine, which holds the principles, the determinism boundary, the lifecycle, and the
+artifact registries, lives in this repo's `CLAUDE.md` and is not installed automatically. To adopt
+Apex's conventions in another project, copy the spine sections from `CLAUDE.md` into that project's
+`.claude/CLAUDE.md`, or into `~/.claude/CLAUDE.md` for user-wide use. In this repo the spine
+auto-loads, so Apex builds itself under its own rules.

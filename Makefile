@@ -1,14 +1,18 @@
 BINARY := bin/apex
 PKG    := ./cmd/apex
 
-.PHONY: build test fmt vet clean release install
+.PHONY: build test fmt vet clean release install uninstall
 
 build:
 	go build -trimpath -ldflags "-s -w" -o $(BINARY) $(PKG)
 
-# Build + register + enable the plugin and install the Apex output style.
+# Build + install Apex as loose artifacts into ~/.claude (bare /ax-* commands).
 install:
 	bash scripts/install.sh
+
+# Remove the loose Apex artifacts from ~/.claude.
+uninstall:
+	bash scripts/uninstall.sh
 
 test:
 	go test ./...
