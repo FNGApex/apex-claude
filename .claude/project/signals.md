@@ -53,7 +53,7 @@ No deployment pipeline — release cross-compilation handled locally via `make r
 |--------|------------|-----------|--------|
 | backbone | cmd/apex/, internal/, go.mod, Makefile | Go CLI (`apex` v0.2.0): signals scan, health score, bash guard, session-start hook, doctor, followups, reminders, validate, docs gate | .claude/project/signals/backbone.md |
 | install | scripts/install.sh, scripts/uninstall.sh | Bash deploy scripts: build apex, copy loose artifacts into ~/.claude/{commands,agents,skills,output-styles,bin}, wire PreToolUse + SessionStart hooks into ~/.claude/settings.json via embedded Python; uninstall reverses all steps | .claude/project/signals/install.md |
-| plugin | .claude-plugin/, agents/, commands/, skills/, output-styles/, hooks/, CLAUDE.md | Claude Code artifact surface (`apex-claude` v0.1.0): 10 agents, 6 skills, 21 commands — full lifecycle roster (plan/implement/ship/diagnose/docs/signals/help); hooks.json retained as reference but hooks now wired by install.sh into settings.json, not via plugin manifest | .claude/project/signals/plugin.md |
+| plugin | .claude-plugin/, agents/, commands/, skills/, output-styles/, hooks/, CLAUDE.md | Claude Code artifact surface (`apex-claude` v0.2.0): 10 agents, 6 skills, 21 commands — full lifecycle roster (plan/implement/ship/diagnose/docs/signals/help); hooks.json retained as reference but hooks now wired by install.sh into settings.json, not via plugin manifest | .claude/project/signals/plugin.md |
 
 ## Cross-cutting
 

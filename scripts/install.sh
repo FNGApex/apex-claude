@@ -88,9 +88,18 @@ mkdir -p "$CONFIG_DIR"/{commands,agents,skills,output-styles,bin}
 cp commands/ax-*.md          "$CONFIG_DIR/commands/"
 cp agents/ax-*.md            "$CONFIG_DIR/agents/"
 cp output-styles/protocol.md "$CONFIG_DIR/output-styles/apex.md"
+# Repair residue from a prior buggy install: a trailing-slash `cp -r src/ dest/`
+# collapsed every skill into a single top-level skills/SKILL.md. Skills are
+# always dir/SKILL.md, so a file directly under skills/ is invalid layout —
+# remove it so the orphan doesn't linger.
+rm -f "$CONFIG_DIR/skills/SKILL.md"
 for d in skills/ax-*/; do
-  rm -rf "$CONFIG_DIR/skills/$(basename "$d")"
-  cp -r "$d" "$CONFIG_DIR/skills/"
+  dest="$CONFIG_DIR/skills/$(basename "$d")"
+  rm -rf "$dest"
+  # Copy to an explicit dest dir, NOT into skills/ with a trailing-slash source:
+  # BSD/macOS `cp -r src/ dest/` copies src's *contents*, collapsing every skill
+  # into one. Naming the dest dir copies the directory itself on both BSD + GNU.
+  cp -r "$d" "$dest"
 done
 
 # --- 4. binary ---------------------------------------------------------------

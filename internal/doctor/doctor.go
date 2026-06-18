@@ -1,5 +1,13 @@
-// Package doctor runs deterministic integrity checks on the plugin layout and
-// project state. Exit 1 if any hard check fails — a command can branch on it.
+// Package doctor runs deterministic integrity checks on the Apex artifact layout
+// and project state. Exit 1 if any hard check fails — a command can branch on it.
+//
+// Apex ships in two layouts and doctor checks the right contract for each:
+//   - dev/plugin layout: the repo (or a marketplace plugin dir). Carries a
+//     .claude-plugin/plugin.json manifest and hooks/hooks.json.
+//   - loose install: ~/.claude, populated by scripts/install.sh. There is NO
+//     plugin manifest and NO hooks/hooks.json — hooks are wired into
+//     settings.json — so those checks are skipped and replaced by a
+//     settings.json hook-wiring check.
 package doctor
 
 import (
@@ -8,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"apexclaude/internal/proj"
 	"apexclaude/internal/signals"
@@ -15,8 +24,13 @@ import (
 
 // Run executes the checks, writing a report to w. Returns 0 if all pass, else 1.
 func Run(w io.Writer) int {
-	root := pluginRoot()
-	fmt.Fprintf(w, "plugin root: %s\n\n", root)
+	root := artifactRoot()
+	loose := isLooseInstall(root)
+	layout := "dev/plugin layout"
+	if loose {
+		layout = "loose install"
+	}
+	fmt.Fprintf(w, "artifact root: %s (%s)\n\n", root, layout)
 
 	ok := true
 	check := func(label string, pass bool) {
@@ -28,8 +42,14 @@ func Run(w io.Writer) int {
 		fmt.Fprintf(w, "  %s %s\n", mark, label)
 	}
 
-	check("plugin.json is valid JSON", validJSON(filepath.Join(root, ".claude-plugin", "plugin.json")))
-	check("hooks/hooks.json is valid JSON", validJSON(filepath.Join(root, "hooks", "hooks.json")))
+	if loose {
+		// Loose model owns a different contract: no manifest, hooks live in
+		// settings.json. Validate the wiring the installer is responsible for.
+		check("apex hooks wired in settings.json", apexHooksWired(root))
+	} else {
+		check("plugin.json is valid JSON", validJSON(filepath.Join(root, ".claude-plugin", "plugin.json")))
+		check("hooks/hooks.json is valid JSON", validJSON(filepath.Join(root, "hooks", "hooks.json")))
+	}
 	check("output-styles/ has a style", countGlob(root, "output-styles", "*.md") >= 1)
 	check("agents/ has an agent", countGlob(root, "agents", "*.md") >= 1)
 	check("commands/ has a command", countGlob(root, "commands", "*.md") >= 1)
@@ -44,7 +64,7 @@ func Run(w io.Writer) int {
 		check("binary dir on $PATH", true)
 	}
 
-	// Project-state is reported as info, not a hard failure of the plugin itself.
+	// Project-state is reported as info, not a hard failure of the artifacts.
 	if code, reason := signals.Stale(proj.Root()); code == 0 {
 		check("project signals fresh", true)
 	} else {
@@ -60,9 +80,10 @@ func Run(w io.Writer) int {
 	return 1
 }
 
-// pluginRoot prefers $CLAUDE_PLUGIN_ROOT, else infers the repo root as the parent
-// of the binary's bin/ directory (bin/apex -> repo root).
-func pluginRoot() string {
+// artifactRoot prefers $CLAUDE_PLUGIN_ROOT, else infers the root as the parent
+// of the binary's bin/ directory (bin/apex -> root). For a loose install that
+// resolves to ~/.claude; for the repo it resolves to the repo root.
+func artifactRoot() string {
 	if r := os.Getenv("CLAUDE_PLUGIN_ROOT"); r != "" {
 		return r
 	}
@@ -71,6 +92,45 @@ func pluginRoot() string {
 	}
 	wd, _ := os.Getwd()
 	return wd
+}
+
+// isLooseInstall reports whether root looks like a loose ~/.claude install
+// rather than the repo / a plugin dir. The discriminator is the absence of a
+// .claude-plugin manifest dir: install.sh never copies it.
+func isLooseInstall(root string) bool {
+	if _, err := os.Stat(filepath.Join(root, ".claude-plugin")); err == nil {
+		return false
+	}
+	return true
+}
+
+// apexHooksWired reports whether settings.json under root wires at least one
+// apex hook (matching the `apex hooks` command the installer writes).
+func apexHooksWired(root string) bool {
+	b, err := os.ReadFile(filepath.Join(root, "settings.json"))
+	if err != nil {
+		return false
+	}
+	var cfg struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if json.Unmarshal(b, &cfg) != nil {
+		return false
+	}
+	for _, groups := range cfg.Hooks {
+		for _, g := range groups {
+			for _, h := range g.Hooks {
+				if strings.Contains(h.Command, "apex hooks") {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // binOnPath reports the directory holding the running binary and whether that
