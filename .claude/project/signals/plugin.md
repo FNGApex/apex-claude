@@ -1,9 +1,11 @@
 # plugin
 
 ## What it does
-Packages a coding-workflow agent layer as a Claude Code plugin named "apex-claude" (version 0.1.0, defaultEnabled: false).
-The plugin wires two hooks: PreToolUse(Bash) runs `${CLAUDE_PLUGIN_ROOT}/bin/apex hooks pre-bash` and SessionStart runs `${CLAUDE_PLUGIN_ROOT}/bin/apex hooks session-start`.
-Ten agents, six skills, 21 commands, and one output style compose the full workflow lifecycle surface.
+Provides the Claude Code artifact surface for Apex: 10 agents, 6 skills, 21 commands, and one output style composing the full workflow lifecycle (plan/implement/ship/diagnose/docs/signals/help).
+
+Installed as **loose user-level artifacts** into `~/.claude/` by `scripts/install.sh` (not as a Claude Code plugin). Commands appear as bare `/ax-*`. The `.claude-plugin/plugin.json` manifest is retained in the repo for reference but is not the active install vehicle.
+
+Hooks (PreToolUse(Bash) + SessionStart) are wired into `~/.claude/settings.json` by `install.sh`; they invoke `~/.claude/bin/apex hooks pre-bash` and `~/.claude/bin/apex hooks session-start`.
 
 ## Artifacts
 - .claude-plugin/plugin.json — plugin manifest; declares name, version, description, defaultEnabled
@@ -46,16 +48,16 @@ Ten agents, six skills, 21 commands, and one output style compose the full workf
 - skills/ax-documentation/SKILL.md — diff-driven documentation classifier; reads indexed doc surfaces; emits proposed edits; maintenance vs. bootstrap modes
 - skills/ax-explainer/SKILL.md — voice module for enduring human-facing narrative (README, docs/guides, CHANGELOG); inverts terse Apex style; dispatches ax-writer
 - output-styles/protocol.md — "Protocol" output style; signal-first, drops filler phrases; hedging only when genuinely uncertain; tiers: lite/full/ultra
-- hooks/hooks.json — hook wiring; PreToolUse(Bash) and SessionStart; both invoke ${CLAUDE_PLUGIN_ROOT}/bin/apex
+- hooks/hooks.json — hook wiring reference; PreToolUse(Bash) and SessionStart; retained for documentation but hooks are now wired via ~/.claude/settings.json by scripts/install.sh (not loaded from this file by the plugin system)
 
 ## Coupling
 - Changing the ax-reviewer verdict format (`VERDICT: PASS` / `VERDICT: CHANGES_REQUESTED` / `CONFIDENCE: <N>`) breaks ax-ship, ax-implement, and ax-review-branch which parse those tokens.
 - Changing ax-commit skill trigger phrases or Conventional Commits format affects ax-ship, which delegates to ax-commit for the commit message.
 - Adding or renaming agents requires updating any command or skill that dispatches them by name (ax-ship dispatches ax-reviewer; ax-implement dispatches ax-builder + ax-reviewer; ax-autopilot dispatches ax-plan agent + ax-builder + ax-reviewer).
-- Adding hooks to hooks.json requires the `${CLAUDE_PLUGIN_ROOT}/bin/apex` binary to handle the new hook event; the binary is tracked in the backbone domain.
-- Changing plugin.json `name` or `defaultEnabled` affects how the Claude Code harness loads and activates the plugin.
+- Adding hook events requires updating both `hooks/hooks.json` (reference) and `scripts/install.sh` (the Python snippet that writes to settings.json); the backbone binary must also handle the new event.
+- Changing plugin.json `name` or `defaultEnabled` no longer affects runtime behavior (plugin is not the install vehicle); these fields are reference only.
 - ax-signals-inferrer dispatches ax-investigator per domain on large repos; renaming ax-investigator breaks that dispatch.
-- CLAUDE.md in this repo carries the full Apex spine (principles, lifecycle, registries); it is not auto-shipped with the plugin — users must copy it to their project's CLAUDE.md.
+- CLAUDE.md in this repo carries the full Apex spine (principles, lifecycle, registries); it is not auto-deployed by install.sh — users must opt in by copying the spine to their project's CLAUDE.md.
 
 ## Conventions worth knowing
 - ax-reviewer finding format: `path:line: <emoji> severity: problem. fix.` where 🟥 = blocker, 🟧 = risk, 🟨 = nit, 🟦 = uncertain.
@@ -64,7 +66,7 @@ Ten agents, six skills, 21 commands, and one output style compose the full workf
 - ax-commit allowed-tools are restricted to `Bash(git status*)`, `Bash(git diff*)`, `Bash(git log*)` — no file reads or writes.
 - ax-tdd skips are always explained inline: `skipped TDD because: <reason>`.
 - Protocol output style permits prose only for security warnings, irreversible-action confirmations, and non-obvious tradeoffs.
-- hooks.json references `${CLAUDE_PLUGIN_ROOT}` as an environment variable; the plugin root path is not hardcoded.
+- hooks.json is a reference document; the active hook wiring is in ~/.claude/settings.json, written by scripts/install.sh with the absolute path to ~/.claude/bin/apex.
 - ax-debug is opt-in only — dispatched when a test breaks or the orchestrator is stuck, not as routine implementation.
 - ax-plan keeps research in its own context to avoid polluting the orchestrator's cache.
 - ax-writer inverts the terse Apex output style; scope is enduring narrative docs only, not specs or signals.

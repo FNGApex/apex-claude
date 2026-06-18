@@ -19,7 +19,7 @@ Module is `apexclaude` (go 1.26), built to `bin/apex` via `make build`; cross-co
 - internal/doctor/doctor.go — Run() validates: .claude-plugin/plugin.json valid JSON, hooks/hooks.json valid JSON, output-styles/ has .md, agents/ has .md, commands/ has .md, skills/ has a subdirectory containing SKILL.md (glob: skills/*/SKILL.md); reports signals freshness as info; resolves plugin root from $CLAUDE_PLUGIN_ROOT or binary location (bin/apex → repo root)
 - internal/proj/proj.go — Root() returns $APEX_REPO if set, else cwd; StateDir() returns <root>/.claude/project, creating it if absent
 - go.mod — module apexclaude, go 1.26
-- Makefile — targets: build, test (go test ./...), fmt, vet, clean, release (cross-compile matrix); install is declared in .PHONY but has no recipe
+- Makefile — targets: build, test (go test ./...), fmt, vet, clean, release (cross-compile matrix), install (delegates to scripts/install.sh), uninstall (delegates to scripts/uninstall.sh)
 
 ## Coupling
 - Changing the `.claude/project/deterministic-signals.md` format (written by internal/signals) requires updating Stale() fingerprint logic and any consumer that reads this file (e.g. the session-start hook and doctor info check)
