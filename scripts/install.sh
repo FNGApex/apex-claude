@@ -7,7 +7,11 @@
 #   2. Registers this repo as a Claude Code marketplace (user scope).
 #   3. (Re)installs the plugin so the freshly built binary lands in the cache.
 #   4. Enables the plugin.
-#   5. Installs the Apex output style into the output-style picker.
+#
+# The Apex output style ships INSIDE the plugin (output-styles/protocol.md), so
+# enabling the plugin surfaces it in the picker as `apex-claude:Apex`. Do NOT
+# also copy it into ~/.claude/output-styles — that produces a duplicate "Apex"
+# entry alongside the plugin's namespaced one.
 #
 # Why force a reinstall (step 3): `claude plugin install` copies the working
 # tree into ~/.claude/plugins/cache at install time, and `plugin update` is
@@ -27,7 +31,6 @@ PLUGIN="apex-claude"
 PLUGIN_ID="${PLUGIN}@${MARKETPLACE}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 BUILD=1
 RELEASE=0
@@ -100,19 +103,16 @@ else
   die "plugin did not reach an enabled state — check: claude plugin list"
 fi
 
-# --- 5. output style ---------------------------------------------------------
-say "Installing Apex output style into $CONFIG_DIR/output-styles/"
-mkdir -p "$CONFIG_DIR/output-styles"
-cp output-styles/protocol.md "$CONFIG_DIR/output-styles/apex.md"
-
 # --- done --------------------------------------------------------------------
+# The output style ships in the plugin; it appears as `apex-claude:Apex` once
+# the plugin is enabled. No separate copy step — see the header note.
 cat <<EOF
 
 $(printf '\033[1;32m✔ Apex Claude installed.\033[0m')
 
 Next steps:
   • Restart Claude Code (or run /reload-plugins) so /ax-* commands load.
-  • Activate the output style: /output-style Apex
+  • Activate the output style: /output-style apex-claude:Apex
   • Verify: claude plugin list   →   $PLUGIN_ID (enabled)
 
 Re-run this script after any code change to refresh the cached binary.
