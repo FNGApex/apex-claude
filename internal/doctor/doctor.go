@@ -35,6 +35,15 @@ func Run(w io.Writer) int {
 	check("commands/ has a command", countGlob(root, "commands", "*.md") >= 1)
 	check("skills/ has a SKILL.md", countSkills(root) >= 1)
 
+	// PATH reachability is info, not a hard failure: hooks invoke the binary by
+	// absolute path, so Apex works regardless. It only matters for running `apex`
+	// by hand. Warn when the binary's own directory is absent from $PATH.
+	if dir, on := binOnPath(); !on {
+		fmt.Fprintf(w, "  • PATH: %s is not on $PATH — add it to run `apex` directly\n", dir)
+	} else {
+		check("binary dir on $PATH", true)
+	}
+
 	// Project-state is reported as info, not a hard failure of the plugin itself.
 	if code, reason := signals.Stale(proj.Root()); code == 0 {
 		check("project signals fresh", true)
@@ -62,6 +71,23 @@ func pluginRoot() string {
 	}
 	wd, _ := os.Getwd()
 	return wd
+}
+
+// binOnPath reports the directory holding the running binary and whether that
+// directory appears in $PATH. Returns ("", true) if the executable can't be
+// resolved — we don't warn on what we can't measure.
+func binOnPath() (string, bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", true
+	}
+	dir := filepath.Dir(exe)
+	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
+		if p == dir {
+			return dir, true
+		}
+	}
+	return dir, false
 }
 
 func validJSON(p string) bool {

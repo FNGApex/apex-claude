@@ -98,6 +98,16 @@ say "Installing binary into $APEX_BIN"
 cp bin/apex "$APEX_BIN"
 chmod +x "$APEX_BIN"
 
+# Detect whether the install dir is reachable on PATH. The binary lives under
+# ~/.claude/bin, which is not on a default PATH — so `apex` won't resolve in a
+# fresh shell unless the user wires it. We never mutate the user's rc; we only
+# tell them the exact line to add. Empty ON_PATH => print guidance at the end.
+BIN_DIR="$(dirname "$APEX_BIN")"
+ON_PATH=""
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ON_PATH=1 ;;
+esac
+
 # --- 5. wire hooks (preserve all other settings) -----------------------------
 say "Wiring hooks into $CONFIG_DIR/settings.json"
 python3 - "$CONFIG_DIR/settings.json" "$APEX_BIN" <<'PY'
@@ -152,3 +162,15 @@ Next steps:
 
 Re-run this script after any code change to refresh the installed binary.
 EOF
+
+if [ -z "$ON_PATH" ]; then
+  cat <<EOF
+$(printf '\033[1;33m! %s is not on your PATH\033[0m' "$BIN_DIR")
+  The 'apex' command resolves for Claude Code's hooks (they call the full path),
+  but to run 'apex' yourself, add this line to your shell rc (~/.bashrc or
+  ~/.zshrc) and start a new shell:
+
+    export PATH="$BIN_DIR:\$PATH"
+
+EOF
+fi
