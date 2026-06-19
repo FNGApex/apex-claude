@@ -10,9 +10,9 @@ The binary owns the deterministic capture and the staleness anchor; you own the 
    context/time. Pass through as the argument.
 
 2. **Scan + skeleton.** Run `apex handoff scan [mode]`. This captures git branch/HEAD/dirty/staged,
-   last commit, open followups, due reminders, health, and signals staleness, then writes
-   `.claude/project/handoff.md` with frontmatter + the mode's empty section skeleton. If an
-   un-consumed handoff already exists, the binary archives it first — nothing is lost.
+   last commit, open followups, due reminders, health, signals staleness, and any active scratchpad
+   `BRIEF.md`, then writes `.claude/project/handoff.md` with frontmatter + the mode's empty section
+   skeleton. If an un-consumed handoff already exists, the binary archives it first — nothing is lost.
 
 3. **Compose.** Edit `.claude/project/handoff.md`, filling the mode's sections from THIS session —
    the part the binary can't know:
