@@ -122,6 +122,21 @@ This builds the `apex` binary, copies the commands, agents, skills, and output s
 `PreToolUse` hooks into `~/.claude/settings.json` without disturbing any of your other settings.
 Restart Claude Code afterward, then activate the voice with `/output-style Apex`.
 
+That source build needs a Go toolchain. On a Linux or macOS box without one, install from a
+published release instead with a single line — it downloads the prebuilt `apex` binary for your
+platform rather than compiling it:
+
+```bash
+curl -fsSL https://github.com/FNGApex/apex-claude/releases/latest/download/install-release.sh | bash
+```
+
+`install-release.sh` detects your OS and architecture (Linux and macOS, amd64 and arm64), downloads
+the matching `apex-claude-<os>-<arch>.zip` bundle, copies the same artifacts into `~/.claude/`, and
+wires the hooks exactly as the source installer does — it just skips the build, so it needs no `go`
+or `make`, only `curl` (or `wget`) and the `python3` that ships on essentially every Linux and macOS
+system. Pin a specific release with `APEX_VERSION=v0.2.0` and redirect the install root with
+`CLAUDE_CONFIG_DIR`. Remove it later with `scripts/uninstall.sh`, the same as a source install.
+
 On native Windows, where there is no bash, `python3`, or build toolchain to lean on, install from a
 published release with a single PowerShell line:
 
@@ -132,9 +147,11 @@ irm https://github.com/FNGApex/apex-claude/releases/latest/download/install.ps1 
 `install.ps1` downloads the prebuilt `apex.exe` bundle, copies the same artifacts into
 `~/.claude\`, and wires the hooks using PowerShell's native JSON handling — no dependencies beyond
 the Windows PowerShell that ships with the OS (5.1 and 7+ both work). Remove it later with
-`scripts/uninstall.ps1`. The release bundles themselves are cut by the maintainer with
-`scripts/publish.ps1`, which cross-compiles the matrix, zips the binary together with the artifacts
-per platform, and uploads everything to a GitHub Release via `gh`.
+`scripts/uninstall.ps1`. The release bundles themselves are cut by the maintainer with one of two
+mirrored publish tools — `scripts/publish.sh` from Linux or macOS, `scripts/publish.ps1` from
+Windows. Both cross-compile the same matrix, zip the binary together with the artifacts per
+platform, and upload every bundle plus both one-line installers to a GitHub Release via `gh`, so
+whichever platform the maintainer ships from, all three install paths stay in sync.
 
 Apex installs as loose files rather than as a Claude Code plugin on purpose. Plugin commands are
 namespaced by the harness, so a plugin install surfaces them as `/apex-claude:ax-plan`; loose

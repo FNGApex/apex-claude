@@ -118,19 +118,24 @@ if ($DryRun) {
 }
 
 # --- create / update the GitHub Release --------------------------------------
-$notes = "Apex Claude $Version`n`nWindows install:`n``````powershell`nirm https://github.com/FNGApex/apex-claude/releases/latest/download/install.ps1 | iex`n```````n"
+$notes = "Apex Claude $Version`n`nLinux / macOS install:`n``````bash`ncurl -fsSL https://github.com/FNGApex/apex-claude/releases/latest/download/install-release.sh | bash`n```````n`nWindows install:`n``````powershell`nirm https://github.com/FNGApex/apex-claude/releases/latest/download/install.ps1 | iex`n```````n"
+
+# Both one-line installers ride along as release assets: install.ps1 for the
+# Windows `irm | iex` path, install-release.sh for the Linux/macOS `curl | bash`
+# path. Their download URLs (releases/latest/download/<name>) depend on this.
+$installers = @("$PSScriptRoot/install.ps1", "$PSScriptRoot/install-release.sh")
 
 $exists = (& gh release view $Version 2>$null) -and ($LASTEXITCODE -eq 0)
 if ($exists) {
   Say "Release $Version exists — uploading assets (--clobber)"
-  & gh release upload $Version $zips.FullName "$PSScriptRoot/install.ps1" --clobber
+  & gh release upload $Version $zips.FullName @installers --clobber
 } else {
   Say "Creating release $Version"
-  & gh release create $Version $zips.FullName "$PSScriptRoot/install.ps1" `
+  & gh release create $Version $zips.FullName @installers `
       --title "Apex Claude $Version" --notes $notes
 }
 if ($LASTEXITCODE -ne 0) { Die "gh release step failed" }
 
 Write-Host "`n✔ Published $Version." -ForegroundColor Green
-Write-Host "  Users install on Windows with:"
-Write-Host "    irm https://github.com/FNGApex/apex-claude/releases/latest/download/install.ps1 | iex"
+Write-Host "  Linux/macOS: curl -fsSL https://github.com/FNGApex/apex-claude/releases/latest/download/install-release.sh | bash"
+Write-Host "  Windows    : irm https://github.com/FNGApex/apex-claude/releases/latest/download/install.ps1 | iex"
