@@ -42,6 +42,10 @@ The binary owns determinism; the model owns judgment.
 4. **Sync docs** — `/ax-documentation`. Ship verbs run maintenance mode automatically.
 5. **Improve** — `/ax-improve` retrospective. `/ax-help` routes when lost.
 
+**Session continuity:** `/ax-handoff [graceful|urgent]` captures a handoff at a stopping point;
+`/ax-resume` consumes one (routes on `apex handoff status` — fresh/stale/absent). Binary scans the
+deterministic state; the model composes the narrative.
+
 **Autonomous shortcut:** `/ax-autopilot <task | issue#> [merge-verb]` runs plan → implement loop →
 ship hands-off, with one human decision: how to merge.
 
@@ -66,10 +70,11 @@ reasoning), `ax-signals-inferrer` (sonnet, scoped rwx), `ax-git-scout` (sonnet, 
 per dispatch; summons any subagent except ax-builder), `ax-writer` (opus, prose drafter).
 
 **Skills** (auto-fire or explicit): `ax-tdd`, `ax-commit`, `ax-verify`, `ax-review`,
-`ax-documentation`, `ax-explainer`.
+`ax-documentation`, `ax-explainer`, `ax-handoff`.
 
 **Backbone** (`apex <cmd>`): `signals scan|show|stale`, `health show|set`, `followups`, `reminder`,
-`hooks pre-bash|session-start`, `doctor`, `validate`, `docs scan|stale`. Run `apex <cmd>` for usage.
+`hooks pre-bash|session-start`, `doctor`, `validate`, `docs scan|stale`, `handoff scan|status|archive`.
+Run `apex <cmd>` for usage.
 
 <apex-signals>
 

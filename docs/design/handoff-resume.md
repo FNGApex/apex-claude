@@ -62,9 +62,13 @@ Exit-code contract:
 
 | Code | Meaning | Resume route |
 |---|---|---|
-| `0` | active handoff present, `head` == live HEAD | read doc → `handoff scan` → reconcile → confirm → archive |
-| `2` | active handoff present, `head` != live HEAD | warn drift → rescan → reconcile (same as 0 thereafter) |
-| `1` | no active handoff | re-prompt: rescan-reconstruct \| tell me where \| start fresh |
+| `0` | active handoff present, `head` == live HEAD | read doc → reconcile vs read-only live state (`git status`, followups, health) → confirm → `handoff archive` |
+| `2` | active handoff present, `head` != live HEAD | warn drift → same read-only reconcile as 0 → confirm → archive |
+| `1` | no active handoff | re-prompt: rescan-reconstruct (`handoff scan`) \| tell me where \| start fresh |
+
+Note: `apex handoff scan` *writes* the skeleton (like `apex signals scan`), so it is used only for
+capture (`/ax-handoff`) and route-1 reconstruct — never during a route-0/2 consume, where it would
+overwrite the doc being read. Route-0/2 reconciliation is read-only.
 
 ## Pressure-test 2 — auto-fire phrase scoping
 
