@@ -104,6 +104,13 @@ func isLooseInstall(root string) bool {
 	return true
 }
 
+// isApexHookCmd reports whether a hook command invokes `apex hooks`. The binary
+// is `apex` on Unix and `apex.exe` on Windows, so match both — keying on the
+// bare `apex hooks` substring would false-negative on every Windows install.
+func isApexHookCmd(cmd string) bool {
+	return strings.Contains(cmd, "apex hooks") || strings.Contains(cmd, "apex.exe hooks")
+}
+
 // apexHooksWired reports whether settings.json under root wires at least one
 // apex hook (matching the `apex hooks` command the installer writes).
 func apexHooksWired(root string) bool {
@@ -124,7 +131,7 @@ func apexHooksWired(root string) bool {
 	for _, groups := range cfg.Hooks {
 		for _, g := range groups {
 			for _, h := range g.Hooks {
-				if strings.Contains(h.Command, "apex hooks") {
+				if isApexHookCmd(h.Command) {
 					return true
 				}
 			}

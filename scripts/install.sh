@@ -29,7 +29,18 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-APEX_BIN="$CONFIG_DIR/bin/apex"
+
+# On Windows (Git Bash / MSYS / Cygwin) the Go toolchain emits `apex.exe`, so
+# every file op and the wired hook command must use that exact name. Detecting
+# the host here keeps the build check, the copy, and the hook in agreement.
+# $CONFIG_DIR is already an MSYS forward-slash path (/c/Users/...), so the hook
+# command we write is bash-safe; a backslash Windows path would be mangled when
+# Claude Code runs the hook through bash (\U \d ... get eaten as escapes).
+EXE=""
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) EXE=".exe" ;;
+esac
+APEX_BIN="$CONFIG_DIR/bin/apex$EXE"
 
 PLUGIN_ID="apex-claude@apex-claude"
 MARKETPLACE="apex-claude"
@@ -69,10 +80,10 @@ if [ "$BUILD" -eq 1 ]; then
   rm -rf bin
   make build
   [ "$RELEASE" -eq 1 ] && make release
-  [ -x bin/apex ] || die "build did not produce an executable bin/apex"
+  [ -x "bin/apex$EXE" ] || die "build did not produce an executable bin/apex$EXE"
 else
   say "Skipping build (--no-build)"
-  [ -x bin/apex ] || die "--no-build set but bin/apex is missing — build it first"
+  [ -x "bin/apex$EXE" ] || die "--no-build set but bin/apex$EXE is missing — build it first"
 fi
 
 # --- 2. drop any prior plugin install (migration) ----------------------------
@@ -104,7 +115,7 @@ done
 
 # --- 4. binary ---------------------------------------------------------------
 say "Installing binary into $APEX_BIN"
-cp bin/apex "$APEX_BIN"
+cp "bin/apex$EXE" "$APEX_BIN"
 chmod +x "$APEX_BIN"
 
 # Detect whether the install dir is reachable on PATH. The binary lives under
@@ -133,7 +144,10 @@ except json.JSONDecodeError as e:
 hooks = data.setdefault("hooks", {})
 
 def is_apex(group):
-    return any("apex hooks" in h.get("command", "") for h in group.get("hooks", []))
+    # Match both `apex hooks` (Unix) and `apex.exe hooks` (Windows) so re-runs
+    # on Windows strip the prior group instead of stacking a duplicate.
+    return any("apex hooks" in (c := h.get("command", "")) or "apex.exe hooks" in c
+               for h in group.get("hooks", []))
 
 # strip any prior apex groups so re-runs don't stack duplicates
 for event in ("PreToolUse", "SessionStart"):

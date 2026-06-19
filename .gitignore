@@ -1,6 +1,9 @@
 # compiled binaries — built via `make build` / `make release`
 /bin/
 
+# release bundles — built via `scripts/publish.ps1`
+/dist/
+
 # Go build/test artifacts
 *.test
 *.out

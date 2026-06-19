@@ -14,6 +14,14 @@ set -euo pipefail
 
 CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
+# On Windows the installed binary is apex.exe; on Unix it is apex. Detect the
+# host so removal targets the right name (the hook-stripping below already
+# matches both `apex hooks` and `apex.exe hooks`).
+EXE=""
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) EXE=".exe" ;;
+esac
+
 for arg in "$@"; do
   case "$arg" in
     -h|--help)
@@ -31,7 +39,7 @@ rm -fv "$CONFIG_DIR"/commands/ax-*.md 2>/dev/null || true
 rm -fv "$CONFIG_DIR"/agents/ax-*.md   2>/dev/null || true
 rm -rfv "$CONFIG_DIR"/skills/ax-*     2>/dev/null || true
 rm -fv  "$CONFIG_DIR/output-styles/apex.md" 2>/dev/null || true
-rm -fv  "$CONFIG_DIR/bin/apex"              2>/dev/null || true
+rm -fv  "$CONFIG_DIR/bin/apex$EXE"          2>/dev/null || true
 
 if [ -f "$CONFIG_DIR/settings.json" ] && have python3; then
   say "Stripping apex hooks from settings.json"
@@ -45,7 +53,9 @@ except (FileNotFoundError, json.JSONDecodeError):
     sys.exit(0)
 hooks = data.get("hooks", {})
 def is_apex(group):
-    return any("apex hooks" in h.get("command", "") for h in group.get("hooks", []))
+    # Match both `apex hooks` (Unix) and `apex.exe hooks` (Windows).
+    return any("apex hooks" in (c := h.get("command", "")) or "apex.exe hooks" in c
+               for h in group.get("hooks", []))
 for event in ("PreToolUse", "SessionStart"):
     if event in hooks:
         hooks[event] = [g for g in hooks[event] if not is_apex(g)]

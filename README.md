@@ -122,6 +122,20 @@ This builds the `apex` binary, copies the commands, agents, skills, and output s
 `PreToolUse` hooks into `~/.claude/settings.json` without disturbing any of your other settings.
 Restart Claude Code afterward, then activate the voice with `/output-style Apex`.
 
+On native Windows, where there is no bash, `python3`, or build toolchain to lean on, install from a
+published release with a single PowerShell line:
+
+```powershell
+irm https://github.com/FNGApex/apex-claude/releases/latest/download/install.ps1 | iex
+```
+
+`install.ps1` downloads the prebuilt `apex.exe` bundle, copies the same artifacts into
+`~/.claude\`, and wires the hooks using PowerShell's native JSON handling — no dependencies beyond
+the Windows PowerShell that ships with the OS (5.1 and 7+ both work). Remove it later with
+`scripts/uninstall.ps1`. The release bundles themselves are cut by the maintainer with
+`scripts/publish.ps1`, which cross-compiles the matrix, zips the binary together with the artifacts
+per platform, and uploads everything to a GitHub Release via `gh`.
+
 Apex installs as loose files rather than as a Claude Code plugin on purpose. Plugin commands are
 namespaced by the harness, so a plugin install surfaces them as `/apex-claude:ax-plan`; loose
 user-level artifacts are not namespaced, so the same command is just `/ax-plan`. The cost of the

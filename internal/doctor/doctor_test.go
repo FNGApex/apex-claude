@@ -56,6 +56,20 @@ func TestLooseInstallPasses(t *testing.T) {
 	}
 }
 
+// A Windows install wires `apex.exe hooks ...`; the detector must not require
+// the bare `apex hooks` form or it false-negatives on every Windows machine.
+func TestLooseInstallPassesWithWindowsExeHook(t *testing.T) {
+	root := t.TempDir()
+	writeArtifacts(t, root)
+	os.WriteFile(filepath.Join(root, "settings.json"),
+		[]byte(`{"hooks":{"PreToolUse":[{"hooks":[{"command":"C:\\x\\apex.exe hooks pre-bash"}]}]}}`), 0o644)
+
+	code, out := run(t, root)
+	if code != 0 {
+		t.Fatalf("want pass with apex.exe hook, got %d\n%s", code, out)
+	}
+}
+
 func TestLooseInstallFailsWithoutWiredHooks(t *testing.T) {
 	root := t.TempDir()
 	writeArtifacts(t, root)
