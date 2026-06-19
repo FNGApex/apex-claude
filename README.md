@@ -43,6 +43,12 @@ The commands follow one loop. Each verb is small and self-describing in the slas
 
 `/ax-autopilot` runs the whole loop hands-off, with one human decision: how to merge.
 
+When a session has to stop mid-stream, `/ax-handoff` captures where you are — the binary scans the
+deterministic state (branch, HEAD, dirty files, open follow-ups, health) and you compose the intent
+narrative on top. `/ax-resume` picks it back up in a fresh session: it reads the staleness verdict
+from the recorded commit, reconciles the plan against current reality, and archives the handoff once
+you confirm the resume point.
+
 ## The orchestrator owns the truth
 
 Subagents never claim a task is done. They gather evidence and report it up. The orchestrator,
