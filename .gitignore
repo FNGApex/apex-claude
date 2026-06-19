@@ -13,6 +13,10 @@
 .claude/project/health.md
 .claude/project/doc-surfaces.md
 .claude/project/*.prev
+
+# session-ephemeral handoff state (per-developer, not shared)
+.claude/project/handoff.md
+.claude/project/handoffs/
 tmp/
 .claude/.scratchpad/
 .worktrees/
