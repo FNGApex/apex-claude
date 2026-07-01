@@ -118,6 +118,16 @@ try {
 $zips = Get-ChildItem (Join-Path $Dist 'apex-claude-*.zip')
 Say "Built $($zips.Count) bundles into $Dist"
 
+# SHA256SUMS in coreutils format — lower-hex, two spaces, bare filename — so
+# both `sha256sum -c` and `apex update` can verify the bundles. LF-only, no
+# BOM: sha256sum rejects CRLF/BOM'd checksum lines.
+$Sums = Join-Path $Dist 'SHA256SUMS'
+$sumLines = $zips | ForEach-Object {
+  '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+}
+[System.IO.File]::WriteAllText($Sums, (($sumLines -join "`n") + "`n"))
+Say "checksums -> $Sums"
+
 if ($DryRun) {
   Write-Host "`n✔ Dry run — bundles in $Dist, no release created." -ForegroundColor Green
   return
@@ -134,10 +144,10 @@ $installers = @("$PSScriptRoot/install.ps1", "$PSScriptRoot/install-release.sh")
 $exists = (& gh release view $Version 2>$null) -and ($LASTEXITCODE -eq 0)
 if ($exists) {
   Say "Release $Version exists — uploading assets (--clobber)"
-  & gh release upload $Version $zips.FullName @installers --clobber
+  & gh release upload $Version $zips.FullName $Sums @installers --clobber
 } else {
   Say "Creating release $Version"
-  & gh release create $Version $zips.FullName @installers `
+  & gh release create $Version $zips.FullName $Sums @installers `
       --title "Apex Claude $Version" --notes $notes
 }
 if ($LASTEXITCODE -ne 0) { Die "gh release step failed" }
