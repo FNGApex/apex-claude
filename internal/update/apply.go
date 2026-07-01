@@ -76,7 +76,7 @@ func Apply(root, to string) (ApplyResult, error) {
 
 	// Sweep before the up-to-date early return: an already-current install
 	// is exactly when a leftover .old from the last swap lingers longest.
-	removeStaleWindowsOld(root)
+	RemoveStaleWindowsOld(root)
 
 	cur := "v" + version.Version
 	tag := to
@@ -406,10 +406,11 @@ func binaryName() string {
 	return "apex"
 }
 
-// removeStaleWindowsOld best-effort removes a leftover apex.exe.old from a
+// RemoveStaleWindowsOld best-effort removes a leftover apex.exe.old from a
 // prior interrupted Windows swap (see swapBinaryWindows). Silent on
-// failure; a no-op on non-Windows.
-func removeStaleWindowsOld(root string) {
+// failure; a no-op on non-Windows. Exported so internal/hooks.SessionStart
+// can reuse the same sweep instead of duplicating it (checkpoint 5).
+func RemoveStaleWindowsOld(root string) {
 	if runtime.GOOS != "windows" {
 		return
 	}
@@ -452,7 +453,7 @@ func swapBinaryUnix(src, dst string) error {
 // write new apex.exe; on write failure, rename .old back (rollback). The
 // .old file is intentionally left behind on success — it still backs the
 // running process — and is cleaned up best-effort at the start of the NEXT
-// apex update (removeStaleWindowsOld) or session-start hook (CP5).
+// apex update (RemoveStaleWindowsOld) or session-start hook (CP5).
 func swapBinaryWindows(src, dst string) error {
 	old := dst + ".old"
 	if err := os.Rename(dst, old); err != nil {
