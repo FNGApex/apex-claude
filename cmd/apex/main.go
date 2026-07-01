@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"os"
 	"sort"
-)
 
-const version = "0.2.0"
+	"apexclaude/internal/version"
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -22,7 +22,7 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "version", "--version", "-v":
-		fmt.Printf("apex %s\n", version)
+		fmt.Printf("apex %s\n", version.Version)
 		return
 	case "help", "--help", "-h":
 		usage(os.Stdout)

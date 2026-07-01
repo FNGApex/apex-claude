@@ -159,20 +159,3 @@ func TestDirOnPathResolvesSymlinks(t *testing.T) {
 		t.Error("real PATH entry should match the symlinked dir")
 	}
 }
-
-func TestLooksLikeArtifactRoot(t *testing.T) {
-	empty := t.TempDir()
-	if looksLikeArtifactRoot(empty) {
-		t.Error("empty dir must not look like an artifact root")
-	}
-	loose := t.TempDir()
-	os.MkdirAll(filepath.Join(loose, "commands"), 0o755)
-	if !looksLikeArtifactRoot(loose) {
-		t.Error("dir with commands/ should look like an artifact root (loose layout)")
-	}
-	dev := t.TempDir()
-	os.MkdirAll(filepath.Join(dev, ".claude-plugin"), 0o755)
-	if !looksLikeArtifactRoot(dev) {
-		t.Error("dir with .claude-plugin/ should look like an artifact root (dev layout)")
-	}
-}

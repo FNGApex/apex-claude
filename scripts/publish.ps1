@@ -21,7 +21,9 @@
   This is the maintainer "ship to prod" step. End users never run it.
 
 .PARAMETER Version
-  Release tag (e.g. v0.2.0). Defaults to "v" + the const in cmd/apex/main.go.
+  Release tag (e.g. v0.2.0). Defaults to "v" + the const in
+  internal/version/version.go. When passed explicitly, it must match that
+  const or the script dies (catches a forgotten version bump).
 
 .PARAMETER DryRun
   Build + bundle into dist/ but do not create or upload a GitHub Release.
@@ -63,11 +65,15 @@ if (-not $DryRun -and -not (Get-Command gh -ErrorAction SilentlyContinue)) {
 }
 
 # --- resolve version ---------------------------------------------------------
+$versionGo = Join-Path $RepoRoot 'internal/version/version.go'
+$m = Select-String -Path $versionGo -Pattern 'const Version = "([^"]+)"' | Select-Object -First 1
+if (-not $m) { Die "could not read Version const from $versionGo — pass -Version explicitly" }
+$ConstVersion = 'v' + $m.Matches[0].Groups[1].Value
+
 if (-not $Version) {
-  $mainGo = Join-Path $RepoRoot 'cmd/apex/main.go'
-  $m = Select-String -Path $mainGo -Pattern 'const version = "([^"]+)"' | Select-Object -First 1
-  if (-not $m) { Die "could not read version const from $mainGo — pass -Version explicitly" }
-  $Version = 'v' + $m.Matches[0].Groups[1].Value
+  $Version = $ConstVersion
+} elseif ($Version -ne $ConstVersion) {
+  Die "-Version $Version does not match the const in $versionGo ($ConstVersion) — bump the const or drop -Version"
 }
 if ($Version -notmatch '^v\d+\.\d+\.\d+') { Die "version '$Version' should look like v1.2.3" }
 Say "Publishing $Version"
