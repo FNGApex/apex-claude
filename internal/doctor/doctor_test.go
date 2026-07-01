@@ -126,3 +126,53 @@ func TestDevLayoutFailsOnBadManifest(t *testing.T) {
 		t.Fatalf("want failure on invalid plugin.json, got %d", code)
 	}
 }
+
+func TestDirOnPathTrailingSlashAndCase(t *testing.T) {
+	dir := t.TempDir()
+	sep := string(os.PathListSeparator)
+
+	// Trailing separator on the PATH entry must still match.
+	entry := dir + string(os.PathSeparator)
+	if !dirOnPath(dir, "/somewhere/else"+sep+entry) {
+		t.Errorf("trailing-separator PATH entry should match %q", dir)
+	}
+	if dirOnPath(dir, "/somewhere/else"+sep+"/not/it") {
+		t.Error("unrelated PATH must not match")
+	}
+	if dirOnPath(dir, "") {
+		t.Error("empty PATH must not match")
+	}
+}
+
+func TestDirOnPathResolvesSymlinks(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "bin-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	// PATH carries the symlink; the binary reports the real dir. Must match.
+	if !dirOnPath(real, link) {
+		t.Error("symlinked PATH entry should match the resolved dir")
+	}
+	// And the inverse: binary dir is the symlink, PATH has the real path.
+	if !dirOnPath(link, real) {
+		t.Error("real PATH entry should match the symlinked dir")
+	}
+}
+
+func TestLooksLikeArtifactRoot(t *testing.T) {
+	empty := t.TempDir()
+	if looksLikeArtifactRoot(empty) {
+		t.Error("empty dir must not look like an artifact root")
+	}
+	loose := t.TempDir()
+	os.MkdirAll(filepath.Join(loose, "commands"), 0o755)
+	if !looksLikeArtifactRoot(loose) {
+		t.Error("dir with commands/ should look like an artifact root (loose layout)")
+	}
+	dev := t.TempDir()
+	os.MkdirAll(filepath.Join(dev, ".claude-plugin"), 0o755)
+	if !looksLikeArtifactRoot(dev) {
+		t.Error("dir with .claude-plugin/ should look like an artifact root (dev layout)")
+	}
+}

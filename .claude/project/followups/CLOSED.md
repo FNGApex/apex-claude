@@ -1,2 +1,7 @@
 - 005 — Makefile: install in .PHONY has no recipe (closed)
 - 006 — README stale: references wp-* names, actual files are ax-* (Phase 6 rewrite) (closed)
+- 001 — hooks.json points at gitignored bin/apex; ship/build binary or hook fails (closed)
+- 002 — session-start ignores signals.Stale code 2 (error) — surface it (closed)
+- 003 — proj.StateDir creates dir on read paths (currently unused) (closed)
+- 004 — doctor root inference wrong for PATH-installed binary (CLAUDE_PLUGIN_ROOT covers plugin case) (closed)
+- 008 — doctor/install PATH check: handle symlinked bin dir (EvalSymlinks) and trailing-slash PATH entries — exact-match yields false positive/negative (closed)

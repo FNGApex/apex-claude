@@ -176,8 +176,10 @@ try {
   Write-Host "  - Restart Claude Code so /ax-* commands, agents, skills, and hooks load."
   Write-Host "  - Activate the output style: /output-style Apex"
 
+  # Trim trailing separators so entries like "C:\x\bin\" still match
+  # (-contains is already case-insensitive for strings).
   $binDir = Join-Path $ConfigDir 'bin'
-  $onPath = ($env:PATH -split ';') -contains $binDir
+  $onPath = ($env:PATH -split ';' | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\', '/') }) -contains $binDir.TrimEnd('\', '/')
   if (-not $onPath) {
     Write-Host ""
     Write-Host "! $binDir is not on your PATH" -ForegroundColor Yellow

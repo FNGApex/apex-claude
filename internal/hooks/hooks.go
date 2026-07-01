@@ -23,6 +23,8 @@ func SessionStart(args []string, w io.Writer) int {
 	var nudges []string
 	if code, reason := signals.Stale(root); code == 1 {
 		nudges = append(nudges, "Project signals stale: "+reason)
+	} else if code != 0 {
+		nudges = append(nudges, "Project signals check failed: "+reason)
 	}
 	if due, _ := reminder.Due(root, time.Now()); len(due) > 0 {
 		for _, r := range due {

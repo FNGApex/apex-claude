@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"apexclaude/internal/proj"
@@ -82,16 +83,37 @@ func Run(w io.Writer) int {
 
 // artifactRoot prefers $CLAUDE_PLUGIN_ROOT, else infers the root as the parent
 // of the binary's bin/ directory (bin/apex -> root). For a loose install that
-// resolves to ~/.claude; for the repo it resolves to the repo root.
+// resolves to ~/.claude; for the repo it resolves to the repo root. A binary
+// installed elsewhere on PATH (e.g. /usr/local/bin) infers a dir that carries
+// no artifacts — verify the inference and fall back to ~/.claude, then the
+// working directory.
 func artifactRoot() string {
 	if r := os.Getenv("CLAUDE_PLUGIN_ROOT"); r != "" {
 		return r
 	}
 	if exe, err := os.Executable(); err == nil {
-		return filepath.Dir(filepath.Dir(exe))
+		if root := filepath.Dir(filepath.Dir(exe)); looksLikeArtifactRoot(root) {
+			return root
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if root := filepath.Join(home, ".claude"); looksLikeArtifactRoot(root) {
+			return root
+		}
 	}
 	wd, _ := os.Getwd()
 	return wd
+}
+
+// looksLikeArtifactRoot reports whether dir carries the Apex artifact surface:
+// a plugin manifest (dev layout) or a commands/ dir (both layouts ship one).
+func looksLikeArtifactRoot(dir string) bool {
+	for _, p := range []string{".claude-plugin", "commands"} {
+		if fi, err := os.Stat(filepath.Join(dir, p)); err == nil && fi.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 // isLooseInstall reports whether root looks like a loose ~/.claude install
@@ -149,12 +171,41 @@ func binOnPath() (string, bool) {
 		return "", true
 	}
 	dir := filepath.Dir(exe)
-	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
-		if p == dir {
-			return dir, true
+	return dir, dirOnPath(dir, os.Getenv("PATH"))
+}
+
+// dirOnPath reports whether dir appears in the PATH-style list. Entries are
+// compared after cleaning (trailing separators) and symlink resolution, and
+// case-insensitively on Windows — a raw string compare false-negatives on
+// `C:\x\bin\` vs `C:\x\bin` and on symlinked bin dirs.
+func dirOnPath(dir, pathEnv string) bool {
+	want := canonPath(dir)
+	for _, p := range filepath.SplitList(pathEnv) {
+		if p == "" {
+			continue
+		}
+		if pathsEqual(canonPath(p), want) {
+			return true
 		}
 	}
-	return dir, false
+	return false
+}
+
+// canonPath cleans p and resolves symlinks when the path exists; a path that
+// can't be resolved compares by its cleaned form.
+func canonPath(p string) string {
+	p = filepath.Clean(p)
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
+}
+
+func pathsEqual(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 func validJSON(p string) bool {

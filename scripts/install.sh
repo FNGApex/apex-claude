@@ -122,10 +122,13 @@ chmod +x "$APEX_BIN"
 # ~/.claude/bin, which is not on a default PATH — so `apex` won't resolve in a
 # fresh shell unless the user wires it. We never mutate the user's rc; we only
 # tell them the exact line to add. Empty ON_PATH => print guidance at the end.
+# Match trailing-slash PATH entries and a symlinked bin dir too — an exact
+# string compare false-negatives on both.
 BIN_DIR="$(dirname "$APEX_BIN")"
+REAL_BIN_DIR="$(cd "$BIN_DIR" 2>/dev/null && pwd -P)" || REAL_BIN_DIR="$BIN_DIR"
 ON_PATH=""
 case ":$PATH:" in
-  *":$BIN_DIR:"*) ON_PATH=1 ;;
+  *":$BIN_DIR:"* | *":$BIN_DIR/:"* | *":$REAL_BIN_DIR:"* | *":$REAL_BIN_DIR/:"*) ON_PATH=1 ;;
 esac
 
 # --- 5. wire hooks (preserve all other settings) -----------------------------
