@@ -96,6 +96,7 @@ apex hooks session-start
 apex doctor                      # integrity check on the plugin layout + project state
 apex validate                    # lint artifacts and specs (exit 1 on issues)
 apex docs scan|stale             # documentation-surface cache and staleness gate
+apex update [check] [--to vX.Y.Z] # check for a newer release, or apply one
 apex version
 ```
 
@@ -149,15 +150,32 @@ the Windows PowerShell that ships with the OS (5.1 and 7+ both work). Remove it 
 `scripts/uninstall.ps1`. The release bundles themselves are cut by the maintainer with one of two
 mirrored publish tools — `scripts/publish.sh` from Linux or macOS, `scripts/publish.ps1` from
 Windows. Both cross-compile the same matrix, zip the binary together with the artifacts per
-platform, and upload every bundle plus both one-line installers to a GitHub Release via `gh`, so
-whichever platform the maintainer ships from, all three install paths stay in sync.
+platform, write a `SHA256SUMS` file covering every bundle, and upload the bundles, the checksums,
+and both one-line installers to a GitHub Release via `gh`, so whichever platform the maintainer
+ships from, all three install paths stay in sync.
+
+Both prebuilt installers verify what they download. Each one fetches the release's `SHA256SUMS`
+first and refuses to install a bundle whose hash does not match, or one the file does not list at
+all. Releases cut before checksums existed, such as `v0.2.0`, have no `SHA256SUMS`; for those the
+installers print a warning and install unverified rather than refusing outright.
+
+Once installed, a prebuilt install keeps itself current without re-running the installer. At the
+start of each Claude Code session the hook checks a cached record of the latest release — it never
+touches the network itself — and, when a newer version exists, adds a one-line note to the session
+suggesting `apex update`. Refreshing that cache happens in a detached background process at most
+once a day, so the hook stays fast. Running `apex update` downloads the new bundle, verifies it
+against `SHA256SUMS`, and replaces the binary and the artifacts together, so the two never drift
+apart; `apex update check` only reports, and `--to v1.2.3` pins a specific release. Set
+`APEX_NO_UPDATE_CHECK=1` to silence the session note and the background check. Updates are always
+something you run — Apex only ever tells you one is available.
 
 Apex installs as loose files rather than as a Claude Code plugin on purpose. Plugin commands are
 namespaced by the harness, so a plugin install surfaces them as `/apex-claude:ax-plan`; loose
 user-level artifacts are not namespaced, so the same command is just `/ax-plan`. The cost of the
-loose model is that there is no plugin enable/disable/update lifecycle: `scripts/install.sh` owns
-installation and `scripts/uninstall.sh` (or `make uninstall`) owns removal. Re-run the installer
-after any code change to refresh the installed binary.
+loose model is that there is no plugin enable/disable lifecycle: the installers own installation,
+`apex update` owns upgrades of a prebuilt install, and `scripts/uninstall.sh` (or `make uninstall`)
+owns removal. `apex update` deliberately refuses to run against a source checkout — there,
+`git pull && make install` is the upgrade path.
 
 The repo still carries a `.claude-plugin/` manifest, so you can register it as a marketplace and
 `claude plugin install apex-claude@apex-claude` instead if you prefer the plugin lifecycle and do

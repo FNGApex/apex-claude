@@ -1,5 +1,5 @@
 // Command apex is the Apex Claude deterministic backbone: the layer the markdown
-// artifacts can't be. It owns enforcement (hooks), scanning (signals), integrity
+// artifacts can't be. It owns hooks (session start), scanning (signals), integrity
 // (doctor), and the repo health signal — work that must run reliably regardless
 // of what the model decides.
 //

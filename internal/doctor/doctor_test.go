@@ -38,7 +38,7 @@ func TestLooseInstallPasses(t *testing.T) {
 	root := t.TempDir()
 	writeArtifacts(t, root)
 	os.WriteFile(filepath.Join(root, "settings.json"),
-		[]byte(`{"hooks":{"PreToolUse":[{"hooks":[{"command":"/x/apex hooks pre-bash"}]}]}}`), 0o644)
+		[]byte(`{"hooks":{"SessionStart":[{"hooks":[{"command":"/x/apex hooks session-start"}]}]}}`), 0o644)
 
 	code, out := run(t, root)
 	if code != 0 {
@@ -62,7 +62,7 @@ func TestLooseInstallPassesWithWindowsExeHook(t *testing.T) {
 	root := t.TempDir()
 	writeArtifacts(t, root)
 	os.WriteFile(filepath.Join(root, "settings.json"),
-		[]byte(`{"hooks":{"PreToolUse":[{"hooks":[{"command":"C:\\x\\apex.exe hooks pre-bash"}]}]}}`), 0o644)
+		[]byte(`{"hooks":{"SessionStart":[{"hooks":[{"command":"C:\\x\\apex.exe hooks session-start"}]}]}}`), 0o644)
 
 	code, out := run(t, root)
 	if code != 0 {
