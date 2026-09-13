@@ -169,6 +169,12 @@ apart; `apex update check` only reports, and `--to v1.2.3` pins a specific relea
 `APEX_NO_UPDATE_CHECK=1` to silence the session note and the background check. Updates are always
 something you run — Apex only ever tells you one is available.
 
+Coming from `v0.2.0`? That release predates `apex update` and has no checksums, so it cannot upgrade
+itself. Re-run the one-line installer for your platform once to move to the current release; every
+update after that goes through `apex update`. The same holds for an install done through the
+`.claude-plugin/` marketplace route — `apex update` refuses to touch a plugin directory, so plugin
+installs keep upgrading through `claude plugin update`.
+
 Apex installs as loose files rather than as a Claude Code plugin on purpose. Plugin commands are
 namespaced by the harness, so a plugin install surfaces them as `/apex-claude:ax-plan`; loose
 user-level artifacts are not namespaced, so the same command is just `/ax-plan`. The cost of the

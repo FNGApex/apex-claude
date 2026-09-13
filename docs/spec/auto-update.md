@@ -36,7 +36,7 @@ Each row is independently implementable and verifiable.
 
 | # | Checkpoint | Contract | Verify |
 |---|------------|----------|--------|
-| 1 | Version package | New `internal/version/version.go`: `package version; const Version = "0.2.0"`. `cmd/apex/main.go` drops its local const and prints `version.Version`. `scripts/publish.ps1` and `scripts/publish.sh` both read the const from the new path; an explicit `-Version` / `--version` that != `v` + const dies. | `apex version` prints `apex 0.2.0`; `go test ./...` green; `publish.ps1 -DryRun -Version v9.9.9` and `publish.sh --dry-run --version v9.9.9` fail with a mismatch error; without a version both resolve v0.2.0. |
+| 1 | Version package | New `internal/version/version.go`: `package version; const Version = "X.Y.Z"` (single source of truth; `.claude-plugin/plugin.json` and `marketplace.json` must carry the same version — enforced by `TestPluginManifestsMatchVersion`). `cmd/apex/main.go` drops its local const and prints `version.Version`. `scripts/publish.ps1` and `scripts/publish.sh` both read the const from the new path; an explicit `-Version` / `--version` that != `v` + const dies. | `apex version` prints `apex X.Y.Z`; `go test ./...` green; `publish.ps1 -DryRun -Version v9.9.9` and `publish.sh --dry-run --version v9.9.9` fail with a mismatch error; without a version both resolve `v` + const. |
 | 2 | Layout package extraction | `artifactRoot()`, `looksLikeArtifactRoot()`, `isLooseInstall()`, `apexHooksWired()` move from `internal/doctor` to new `internal/layout` (exported). Doctor imports layout; doctor output and exit codes unchanged. | Existing doctor tests pass unchanged (relocated); `apex doctor` output identical before/after on both dev and loose layouts. |
 | 3 | Release check + cache | `internal/update`: `LatestTag()` does the no-redirect GET (5s timeout) and parses the tag; `Compare(a, b)` orders `vX.Y.Z` triples; cache read/write at the fixed path via `os.UserCacheDir()` (dir created on demand; a UserCacheDir error degrades to no-cache, never an error). Failed network check stamps `checked_at`, preserves prior `latest`. Unit tests use `httptest` for the redirect and `t.TempDir` via an injectable cache path. | `go test ./internal/update/...` green: 302 parse, malformed tag ignored, compare table, TTL expiry, failure stamping. |
 | 4 | `apex update check` | New `cmd/apex/cmd_update.go` registers `update`. `apex update check` refreshes the cache and prints `apex v0.2.0 — latest v0.3.0 (update available)` or `apex v0.2.0 — up to date`. Exit 0 = up to date, 1 = update available, 2 = check failed. `--quiet` suppresses stdout (same exit codes) — this is the hook-spawned form. Runs in any layout (check is layout-agnostic). | Run against a stubbed base URL (env or test seam `APEX_UPDATE_BASE_URL` override): all three exit codes reproducible; cache file written with fresh `checked_at`. |
@@ -56,6 +56,9 @@ can spawn a real, working `update check`).
 - No auto-apply: updates are always user-initiated via `apex update`; the system only nudges.
 - No settings.json mutation during update (hook paths are stable absolute paths).
 - No prerelease channel; `releases/latest` semantics only, `--to` for pinning.
+- No self-upgrade out of `v0.2.0` (pre-update-feature, no `SHA256SUMS`): those installs re-run the
+  installer once. No upgrade of plugin-directory installs (`.claude-plugin/` present): refused as dev
+  layout; they use `claude plugin update`.
 - No changes to `scripts/install.sh`'s download path — it builds from source, so there is nothing to
   verify; source-checkout installs update via `git pull && make install`.
 
@@ -74,3 +77,13 @@ can spawn a real, working `update check`).
   regexing `cmd/apex/main.go`, so a bare `publish.sh` failed after CP1). Added the Windows
   PowerShell 5.1 compatibility contract: the committed `install.ps1` did not parse under 5.1 via
   `-File`, and every 5.1 install wrote a BOM'd `settings.json` that `apex doctor` read as unwired.
+- 2026-09-13 — Release readiness for v0.3.0 (the first release able to update itself). Version
+  const and both plugin manifests bumped together; version-dependent tests now derive from
+  `version.Version`. Verified the full user journey against two publish.sh-built release sets
+  (v0.3.0, v0.3.1) behind a mock of the `releases/latest` redirect, on Linux (`install-release.sh`)
+  and on Windows PowerShell 5.1 (`install.ps1`): install → first session primes the cache via the
+  detached check → newer release published → after the TTL the next session refreshes → following
+  session nudges → `apex update` swaps binary + artifacts (Windows: running `apex.exe` renamed to
+  `.old`, swept by the next session start) → `doctor` passes → re-run reports up to date. Hook wall
+  time 3–4ms Linux, 9–14ms Windows. CI matrix gains windows-latest and macos-latest so CP8's
+  Windows-only paths and darwin run on every push.

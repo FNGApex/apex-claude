@@ -6,3 +6,5 @@
 - 004 — doctor root inference wrong for PATH-installed binary (CLAUDE_PLUGIN_ROOT covers plugin case) (closed)
 - 008 — doctor/install PATH check: handle symlinked bin dir (EvalSymlinks) and trailing-slash PATH entries — exact-match yields false positive/negative (closed)
 - 009 — Hook-matcher is_apex in install.sh + install-release.sh matches only 'apex hooks', not 'apex.exe hooks' (uninstall.sh matches both). A hook wired via Git-Bash on Windows (apex.exe) won't be de-duped on a subsequent Unix install re-run. Low risk; harmonize all three matchers. (install-release.sh matcher harmonized to apex(.exe) hooks; all five scripts agree)
+- 007 — implement apex profile refresh (deferred; not needed during build phase) (shipped under another name: 'profile' was Atomic's term for project signals; Apex has apex signals scan|stale, /ax-refresh-signals, ax-signals-inferrer, and the session-start staleness nudge)
+- 010 — CI runs ubuntu-only — windows-only tests never execute; consider a windows runner in the matrix (CI matrix now runs ubuntu, windows and macos; full suite also verified locally on real Windows (update swap/rollback/.old sweep tests execute, 0 failures))
