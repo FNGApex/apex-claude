@@ -1,7 +1,11 @@
 // Package handoff provides session continuity for the apex backbone.
-// It scans repo state into a State struct, renders it as a handoff document,
-// manages the active handoff file at .claude/project/handoff.md, and archives
-// consumed docs to .claude/project/handoffs/<id>.md.
+//
+// The binary reports; the model writes. Scan collects repo state into a State
+// struct and Report renders it as a plain-text fact table — that is the whole
+// deterministic half. Composing .claude/project/handoff.md, frontmatter
+// included, is the model's job (see commands/ax-handoff.md). The binary still
+// owns the two mechanical operations on an existing doc: Status (staleness
+// routing) and Archive (move to .claude/project/handoffs/<id>.md).
 package handoff
 
 import (
@@ -16,7 +20,6 @@ import (
 	"apexclaude/internal/fm"
 	"apexclaude/internal/followups"
 	"apexclaude/internal/health"
-	"apexclaude/internal/proj"
 	"apexclaude/internal/reminder"
 	"apexclaude/internal/signals"
 )
@@ -94,70 +97,54 @@ func Scan(root string) (State, error) {
 	return s, nil
 }
 
-// Render produces the handoff document for the given State and mode.
-// mode must be "graceful" or "urgent". now is used for the created timestamp.
-// Frontmatter key order: mode, created, branch, head, health, status.
-func Render(s State, mode string, now time.Time) string {
-	meta := map[string]string{
-		"mode":    mode,
-		"created": now.UTC().Format(time.RFC3339),
-		"branch":  s.Branch,
-		"head":    s.Head,
-		"health":  strconv.Itoa(s.Health),
-		"status":  "open",
+// Report renders a scanned State as a plain-text fact table for stdout. This is
+// the input the model composes the handoff document from; the binary never
+// writes that document itself.
+func Report(s State) string {
+	yn := func(b bool) string {
+		if b {
+			return "yes"
+		}
+		return "no"
 	}
-	order := []string{"mode", "created", "branch", "head", "health", "status"}
-
-	var body strings.Builder
-	switch mode {
-	case "urgent":
-		body.WriteString("## Cursor\n\n\n")
-		body.WriteString("## Uncommitted\n\n\n")
-		body.WriteString("## Resume here\n\n\n")
-		body.WriteString("## Blockers\n\n")
-	default: // graceful
-		body.WriteString("## Shipped\n\n\n")
-		body.WriteString("## Outcome\n\n\n")
-		body.WriteString("## Next\n\n\n")
-		body.WriteString("## Open threads\n\n")
+	orNone := func(v string) string {
+		if v == "" {
+			return "(none)"
+		}
+		return v
 	}
 
-	return fm.Render(order, meta, body.String())
+	staged := "(none)"
+	if len(s.Staged) > 0 {
+		staged = strings.Join(s.Staged, ", ")
+	}
+	health := "unset"
+	if s.Health >= 0 {
+		health = strconv.Itoa(s.Health)
+	}
+	sig := "fresh"
+	if s.SignalsStale {
+		sig = "STALE — " + s.SignalsReason
+	}
+
+	var b strings.Builder
+	row := func(k, v string) { fmt.Fprintf(&b, "%-13s %s\n", k+":", v) }
+	row("branch", orNone(s.Branch))
+	row("head", orNone(s.Head))
+	row("dirty", yn(s.Dirty))
+	row("staged", staged)
+	row("last-commit", orNone(s.LastCommit))
+	row("followups", fmt.Sprintf("%d open", s.OpenFollowups))
+	row("reminders", fmt.Sprintf("%d due", s.DueReminders))
+	row("health", health)
+	row("signals", sig)
+	row("brief", orNone(s.BriefPath))
+	return b.String()
 }
 
 // Path returns the on-disk path for the active handoff document.
 func Path(root string) string {
 	return filepath.Join(root, ".claude", "project", "handoff.md")
-}
-
-// Write writes the active handoff document. If an un-consumed active doc already
-// exists, Archive is called first so nothing is silently overwritten.
-func Write(root string, s State, mode string, now time.Time) error {
-	// archive existing un-consumed doc if present
-	if _, err := os.Stat(Path(root)); err == nil {
-		// file exists — check if it is consumed
-		data, err := os.ReadFile(Path(root))
-		if err != nil {
-			return fmt.Errorf("handoff Write: read existing: %w", err)
-		}
-		meta, _ := fm.Parse(string(data))
-		if meta["status"] != "consumed" {
-			if _, err := Archive(root); err != nil {
-				return fmt.Errorf("handoff Write: archive existing: %w", err)
-			}
-		}
-	}
-
-	// ensure the state dir exists
-	if _, err := proj.StateDir(root); err != nil {
-		return fmt.Errorf("handoff Write: state dir: %w", err)
-	}
-
-	doc := Render(s, mode, now)
-	if err := os.WriteFile(Path(root), []byte(doc), 0o644); err != nil {
-		return fmt.Errorf("handoff Write: %w", err)
-	}
-	return nil
 }
 
 // Status returns:

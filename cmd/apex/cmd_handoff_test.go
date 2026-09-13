@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"apexclaude/internal/handoff"
@@ -64,36 +65,42 @@ func makeTestCommit(t *testing.T, dir string) {
 	run("commit", "-m", "second commit")
 }
 
+// seedHandoffDoc writes a handoff doc the way the MODEL does — the binary has
+// no writer, so the CLI tests author the document directly.
+func seedHandoffDoc(t *testing.T, root, head string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(handoff.Path(root)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := "---\nmode: graceful\ncreated: 2026-06-19T12:00:00Z\nbranch: main\nhead: " +
+		head + "\nhealth: 88\nstatus: open\n---\n\n## Shipped\n\nthe thing\n"
+	if err := os.WriteFile(handoff.Path(root), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func gitShortHead(t *testing.T, dir string) string {
+	t.Helper()
+	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func TestHandoffStatusAbsent(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("APEX_REPO", root)
 
-	code := runHandoff([]string{"status"})
-	if code != 1 {
+	if code := runHandoff([]string{"status"}); code != 1 {
 		t.Errorf("status absent: got %d want 1", code)
 	}
 }
 
-func TestHandoffScanCreatesFile(t *testing.T) {
-	root := t.TempDir()
-	if !initTestGitRepo(t, root) {
-		t.Skip("git not available")
-	}
-	t.Setenv("APEX_REPO", root)
-
-	code := runHandoff([]string{"scan"})
-	if code != 0 {
-		t.Fatalf("scan returned %d want 0", code)
-	}
-
-	// file must exist at Path
-	p := handoff.Path(root)
-	if _, err := os.Stat(p); err != nil {
-		t.Fatalf("handoff file missing after scan: %v", err)
-	}
-}
-
-func TestHandoffStatusFreshAfterScan(t *testing.T) {
+// scan is a READ-ONLY reporter: it must print facts and create nothing.
+func TestHandoffScanWritesNothing(t *testing.T) {
 	root := t.TempDir()
 	if !initTestGitRepo(t, root) {
 		t.Skip("git not available")
@@ -101,11 +108,32 @@ func TestHandoffStatusFreshAfterScan(t *testing.T) {
 	t.Setenv("APEX_REPO", root)
 
 	if code := runHandoff([]string{"scan"}); code != 0 {
-		t.Fatalf("scan returned %d", code)
+		t.Fatalf("scan returned %d want 0", code)
 	}
+	if _, err := os.Stat(handoff.Path(root)); !os.IsNotExist(err) {
+		t.Error("scan must not create the handoff doc — the model writes it")
+	}
+}
 
-	code := runHandoff([]string{"status"})
-	if code != 0 {
+// scan takes no mode argument now; the mode is the model's to choose.
+func TestHandoffScanRejectsExtraArg(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("APEX_REPO", root)
+
+	if code := runHandoff([]string{"scan", "urgent"}); code != 2 {
+		t.Errorf("scan with a mode arg: got %d want 2", code)
+	}
+}
+
+func TestHandoffStatusFresh(t *testing.T) {
+	root := t.TempDir()
+	if !initTestGitRepo(t, root) {
+		t.Skip("git not available")
+	}
+	t.Setenv("APEX_REPO", root)
+	seedHandoffDoc(t, root, gitShortHead(t, root))
+
+	if code := runHandoff([]string{"status"}); code != 0 {
 		t.Errorf("status fresh: got %d want 0", code)
 	}
 }
@@ -116,43 +144,28 @@ func TestHandoffStatusStaleAfterCommit(t *testing.T) {
 		t.Skip("git not available")
 	}
 	t.Setenv("APEX_REPO", root)
-
-	if code := runHandoff([]string{"scan"}); code != 0 {
-		t.Fatalf("scan returned %d", code)
-	}
+	seedHandoffDoc(t, root, gitShortHead(t, root))
 
 	makeTestCommit(t, root)
 
-	code := runHandoff([]string{"status"})
-	if code != 2 {
+	if code := runHandoff([]string{"status"}); code != 2 {
 		t.Errorf("status stale: got %d want 2", code)
 	}
 }
 
 func TestHandoffArchive(t *testing.T) {
 	root := t.TempDir()
-	if !initTestGitRepo(t, root) {
-		t.Skip("git not available")
-	}
 	t.Setenv("APEX_REPO", root)
+	seedHandoffDoc(t, root, "abc1234")
 
-	if code := runHandoff([]string{"scan"}); code != 0 {
-		t.Fatalf("scan returned %d", code)
-	}
-
-	code := runHandoff([]string{"archive"})
-	if code != 0 {
+	if code := runHandoff([]string{"archive"}); code != 0 {
 		t.Errorf("archive returned %d want 0", code)
 	}
-
-	// active doc must be gone
 	if _, err := os.Stat(handoff.Path(root)); !os.IsNotExist(err) {
 		t.Error("active doc should be removed after archive")
 	}
 
-	// archived file must exist
-	archiveDir := filepath.Join(root, ".claude", "project", "handoffs")
-	entries, err := os.ReadDir(archiveDir)
+	entries, err := os.ReadDir(filepath.Join(root, ".claude", "project", "handoffs"))
 	if err != nil {
 		t.Fatalf("handoffs dir missing: %v", err)
 	}
@@ -165,57 +178,21 @@ func TestHandoffArchiveNothingToArchive(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("APEX_REPO", root)
 
-	// no active doc — archive should fail with exit 1
-	code := runHandoff([]string{"archive"})
-	if code != 1 {
+	if code := runHandoff([]string{"archive"}); code != 1 {
 		t.Errorf("archive with nothing: got %d want 1", code)
 	}
 }
 
-func TestHandoffScanWithMode(t *testing.T) {
-	root := t.TempDir()
-	if !initTestGitRepo(t, root) {
-		t.Skip("git not available")
-	}
-	t.Setenv("APEX_REPO", root)
-
-	code := runHandoff([]string{"scan", "urgent"})
-	if code != 0 {
-		t.Fatalf("scan urgent returned %d want 0", code)
-	}
-
-	p := handoff.Path(root)
-	if _, err := os.Stat(p); err != nil {
-		t.Fatalf("handoff file missing after scan urgent: %v", err)
-	}
-}
-
-func TestHandoffScanInvalidMode(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("APEX_REPO", root)
-
-	code := runHandoff([]string{"scan", "badmode"})
-	if code != 2 {
-		t.Errorf("scan badmode: got %d want 2", code)
-	}
-}
-
 func TestHandoffUnknownSubcommand(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("APEX_REPO", root)
-
-	code := runHandoff([]string{"bogus"})
-	if code != 2 {
+	t.Setenv("APEX_REPO", t.TempDir())
+	if code := runHandoff([]string{"bogus"}); code != 2 {
 		t.Errorf("unknown sub: got %d want 2", code)
 	}
 }
 
 func TestHandoffNoSubcommand(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("APEX_REPO", root)
-
-	code := runHandoff([]string{})
-	if code != 2 {
+	t.Setenv("APEX_REPO", t.TempDir())
+	if code := runHandoff([]string{}); code != 2 {
 		t.Errorf("empty args: got %d want 2", code)
 	}
 }

@@ -3,14 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"apexclaude/internal/handoff"
 	"apexclaude/internal/proj"
 )
 
 func init() {
-	register("handoff", "scan/status/archive handoff documents", runHandoff)
+	register("handoff", "report state / route staleness / archive a handoff", runHandoff)
 }
 
 func runHandoff(args []string) int {
@@ -21,12 +20,11 @@ func runHandoff(args []string) int {
 	}
 	switch sub {
 	case "scan":
-		mode := "graceful"
+		// Read-only: report the deterministic facts. Composing handoff.md from
+		// this report is the model's job, so scan takes no mode and writes
+		// nothing — it is safe to run while a doc is being consumed.
 		if len(args) > 1 {
-			mode = args[1]
-		}
-		if mode != "graceful" && mode != "urgent" {
-			fmt.Fprintln(os.Stderr, "usage: apex handoff scan [graceful|urgent]")
+			fmt.Fprintln(os.Stderr, "usage: apex handoff scan")
 			return 2
 		}
 		s, err := handoff.Scan(root)
@@ -34,11 +32,7 @@ func runHandoff(args []string) int {
 			fmt.Fprintln(os.Stderr, "handoff scan:", err)
 			return 1
 		}
-		if err := handoff.Write(root, s, mode, time.Now()); err != nil {
-			fmt.Fprintln(os.Stderr, "handoff scan:", err)
-			return 1
-		}
-		fmt.Println(handoff.Path(root))
+		fmt.Print(handoff.Report(s))
 		return 0
 
 	case "status":

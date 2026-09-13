@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"apexclaude/internal/fm"
 )
@@ -126,102 +125,122 @@ func TestScanNonGitFields(t *testing.T) {
 
 // --- Checkpoint 3: Render ---
 
-func TestRenderGracefulSections(t *testing.T) {
-	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
-	s := State{Branch: "main", Head: "abc1234", Health: 80}
-	out := Render(s, "graceful", now)
+// --- Report: the deterministic half the model composes from ---
 
-	for _, section := range []string{"## Shipped", "## Outcome", "## Next", "## Open threads"} {
-		if !strings.Contains(out, section) {
-			t.Errorf("graceful render missing section %q", section)
-		}
+func TestReportRendersEveryScannedFact(t *testing.T) {
+	s := State{
+		Branch: "feat/x", Head: "abc1234", Dirty: true,
+		Staged: []string{"a.go", "b.go"}, LastCommit: "feat: land the thing",
+		OpenFollowups: 7, DueReminders: 2, Health: 88,
+		SignalsStale: true, SignalsReason: "manifests changed since last scan — re-scan",
+		BriefPath: "/tmp/x/BRIEF.md",
 	}
-	// urgent sections must NOT appear
-	for _, section := range []string{"## Cursor", "## Uncommitted", "## Resume here", "## Blockers"} {
-		if strings.Contains(out, section) {
-			t.Errorf("graceful render should not contain urgent section %q", section)
-		}
-	}
-}
-
-func TestRenderUrgentSections(t *testing.T) {
-	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
-	s := State{Branch: "main", Head: "abc1234", Health: 60}
-	out := Render(s, "urgent", now)
-
-	for _, section := range []string{"## Cursor", "## Uncommitted", "## Resume here", "## Blockers"} {
-		if !strings.Contains(out, section) {
-			t.Errorf("urgent render missing section %q", section)
-		}
-	}
-	// graceful sections must NOT appear
-	for _, section := range []string{"## Shipped", "## Outcome", "## Next", "## Open threads"} {
-		if strings.Contains(out, section) {
-			t.Errorf("urgent render should not contain graceful section %q", section)
+	out := Report(s)
+	// Every field of State must reach the report — the old Render dropped eight
+	// of them silently, which is the regression this test exists to prevent.
+	for _, want := range []string{
+		"branch:", "feat/x",
+		"head:", "abc1234",
+		"dirty:", "yes",
+		"staged:", "a.go, b.go",
+		"last-commit:", "feat: land the thing",
+		"followups:", "7 open",
+		"reminders:", "2 due",
+		"health:", "88",
+		"signals:", "STALE", "manifests changed",
+		"brief:", "/tmp/x/BRIEF.md",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report missing %q\n%s", want, out)
 		}
 	}
 }
 
-func TestRenderFrontmatterRoundTrip(t *testing.T) {
-	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
-	s := State{Branch: "feat/x", Head: "deadbee", Health: 75}
-	out := Render(s, "graceful", now)
-
-	meta, _ := fm.Parse(out)
-	if meta["mode"] != "graceful" {
-		t.Errorf("mode: got %q", meta["mode"])
-	}
-	if meta["branch"] != "feat/x" {
-		t.Errorf("branch: got %q", meta["branch"])
-	}
-	if meta["head"] != "deadbee" {
-		t.Errorf("head: got %q", meta["head"])
-	}
-	if meta["health"] != "75" {
-		t.Errorf("health: got %q", meta["health"])
-	}
-	if meta["status"] != "open" {
-		t.Errorf("status: got %q", meta["status"])
-	}
-	if meta["created"] == "" {
-		t.Error("created must not be empty")
-	}
-}
-
-func TestRenderFrontmatterKeyOrder(t *testing.T) {
-	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
-	s := State{Branch: "main", Head: "abc1234", Health: 80}
-	out := Render(s, "graceful", now)
-
-	// Verify ordered keys appear in sequence in the raw string
-	order := []string{"mode:", "created:", "branch:", "head:", "health:", "status:"}
-	last := 0
-	for _, key := range order {
-		idx := strings.Index(out[last:], key)
-		if idx < 0 {
-			t.Errorf("key %q not found after position %d", key, last)
-			break
+func TestReportZeroState(t *testing.T) {
+	out := Report(State{Health: -1})
+	for _, want := range []string{
+		"branch:       (none)",
+		"dirty:        no",
+		"staged:       (none)",
+		"followups:    0 open",
+		"reminders:    0 due",
+		"health:       unset",
+		"signals:      fresh",
+		"brief:        (none)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report missing %q\n%s", want, out)
 		}
-		last += idx + len(key)
 	}
 }
 
-// --- Checkpoint 4: Path, Write, Status, Archive ---
+func TestReportWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	_ = Report(State{Health: -1})
+	if _, err := os.Stat(Path(root)); !os.IsNotExist(err) {
+		t.Errorf("Report must not create %s", Path(root))
+	}
+}
+
+// ScanWritesNothing guards the property /ax-resume depends on: scan is safe to
+// run while a handoff doc is being consumed, because it never touches disk.
+func TestScanWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	seedDoc(t, root, "deadbee")
+	before := readDoc(t, root)
+	if _, err := Scan(root); err != nil {
+		t.Fatal(err)
+	}
+	if after := readDoc(t, root); after != before {
+		t.Errorf("Scan mutated the active doc\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// --- the model-authored document: Path / Status / Archive ---
+
+// seedDoc writes a handoff doc the way the MODEL does — the binary no longer
+// has a writer, so tests author the document directly.
+func seedDoc(t *testing.T, root, head string) string {
+	t.Helper()
+	dir := filepath.Join(root, ".claude", "project")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := fm.Render(
+		[]string{"mode", "created", "branch", "head", "health", "status"},
+		map[string]string{
+			"mode": "graceful", "created": "2026-06-19T12:00:00Z",
+			"branch": "main", "head": head, "health": "88", "status": "open",
+		},
+		"## Shipped\n\nthe thing\n\n## Next\n\nthe next thing\n")
+	if err := os.WriteFile(Path(root), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
+
+func readDoc(t *testing.T, root string) string {
+	t.Helper()
+	b, err := os.ReadFile(Path(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
 
 func TestPath(t *testing.T) {
 	root := t.TempDir()
 	p := Path(root)
-	expected := filepath.Join(root, ".claude", "project", "handoff.md")
-	if p != expected {
-		t.Errorf("Path=%q want %q", p, expected)
+	want := filepath.Join(root, ".claude", "project", "handoff.md")
+	if p != want {
+		t.Errorf("Path = %q, want %q", p, want)
 	}
 }
 
 func TestStatusAbsent(t *testing.T) {
 	root := t.TempDir()
-	code := Status(root)
-	if code != 1 {
-		t.Errorf("Status absent: got %d want 1", code)
+	if code := Status(root); code != 1 {
+		t.Errorf("Status with no doc = %d, want 1", code)
 	}
 }
 
@@ -230,19 +249,10 @@ func TestStatusFresh(t *testing.T) {
 	if !initGitRepo(t, root) {
 		t.Skip("git not available")
 	}
-
-	now := time.Now()
-	s, err := Scan(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := Write(root, s, "graceful", now); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-
-	code := Status(root)
-	if code != 0 {
-		t.Errorf("Status fresh: got %d want 0", code)
+	live, _ := gitHead(root)
+	seedDoc(t, root, live)
+	if code := Status(root); code != 0 {
+		t.Errorf("Status with matching head = %d, want 0", code)
 	}
 }
 
@@ -251,160 +261,66 @@ func TestStatusStale(t *testing.T) {
 	if !initGitRepo(t, root) {
 		t.Skip("git not available")
 	}
-
-	now := time.Now()
-	s, err := Scan(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := Write(root, s, "graceful", now); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-
-	// advance HEAD
+	live, _ := gitHead(root)
+	seedDoc(t, root, live)
 	makeCommit(t, root)
-
-	code := Status(root)
-	if code != 2 {
-		t.Errorf("Status stale: got %d want 2", code)
+	if code := Status(root); code != 2 {
+		t.Errorf("Status after HEAD moved = %d, want 2", code)
 	}
 }
 
-func TestArchive(t *testing.T) {
+func TestArchiveMovesDocAndMarksConsumed(t *testing.T) {
 	root := t.TempDir()
-	now := time.Now()
-	s := State{Branch: "main", Head: "abc1234", Health: 80}
-
-	if err := Write(root, s, "graceful", now); err != nil {
-		t.Fatalf("Write: %v", err)
-	}
-
-	// active doc should exist
-	if _, err := os.Stat(Path(root)); err != nil {
-		t.Fatalf("active doc missing after Write: %v", err)
-	}
+	seedDoc(t, root, "abc1234")
 
 	id, err := Archive(root)
 	if err != nil {
-		t.Fatalf("Archive: %v", err)
+		t.Fatal(err)
 	}
-
-	// must be %03d
-	if len(id) != 3 {
-		t.Errorf("Archive id %q should be 3 chars", id)
+	if id != "001" {
+		t.Errorf("first archive id = %q, want 001", id)
 	}
-
-	// archived file must exist
-	archivePath := filepath.Join(root, ".claude", "project", "handoffs", id+".md")
-	data, err := os.ReadFile(archivePath)
-	if err != nil {
-		t.Fatalf("archived file missing at %s: %v", archivePath, err)
-	}
-
-	// status must be consumed
-	meta, _ := fm.Parse(string(data))
-	if meta["status"] != "consumed" {
-		t.Errorf("archived status: got %q want consumed", meta["status"])
-	}
-
-	// active doc must be gone
 	if _, err := os.Stat(Path(root)); !os.IsNotExist(err) {
-		t.Error("active doc should be removed after Archive")
+		t.Error("active doc should be gone after Archive")
+	}
+
+	b, err := os.ReadFile(filepath.Join(root, ".claude", "project", "handoffs", "001.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, body := fm.Parse(string(b))
+	if meta["status"] != "consumed" {
+		t.Errorf("archived status = %q, want consumed", meta["status"])
+	}
+	if meta["head"] != "abc1234" {
+		t.Errorf("archived head = %q, want abc1234", meta["head"])
+	}
+	// The model's narrative must survive the archive round-trip.
+	if !strings.Contains(body, "the next thing") {
+		t.Errorf("archive dropped the model's body\n%s", body)
 	}
 }
 
 func TestArchiveNextID(t *testing.T) {
 	root := t.TempDir()
-	now := time.Now()
-	s := State{Branch: "main", Head: "abc1234", Health: 80}
-
-	// First archive
-	if err := Write(root, s, "graceful", now); err != nil {
-		t.Fatal(err)
-	}
+	seedDoc(t, root, "aaa1111")
 	id1, err := Archive(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id1 != "001" {
-		t.Errorf("first archive id: got %q want 001", id1)
-	}
-
-	// Second archive
-	if err := Write(root, s, "urgent", now); err != nil {
-		t.Fatal(err)
-	}
+	seedDoc(t, root, "bbb2222")
 	id2, err := Archive(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id2 != "002" {
-		t.Errorf("second archive id: got %q want 002", id2)
+	if id1 != "001" || id2 != "002" {
+		t.Errorf("archive ids = %q, %q; want 001, 002", id1, id2)
 	}
 }
 
-func TestWriteArchivesExistingUnconsumed(t *testing.T) {
+func TestArchiveAbsent(t *testing.T) {
 	root := t.TempDir()
-	now := time.Now()
-	s := State{Branch: "main", Head: "abc1234", Health: 80}
-
-	// Write first doc
-	if err := Write(root, s, "graceful", now); err != nil {
-		t.Fatalf("first Write: %v", err)
-	}
-
-	// Write second doc — should archive the first
-	s2 := State{Branch: "feat", Head: "bbb2222", Health: 90}
-	if err := Write(root, s2, "urgent", now); err != nil {
-		t.Fatalf("second Write: %v", err)
-	}
-
-	// The archived copy must exist
-	archivesDir := filepath.Join(root, ".claude", "project", "handoffs")
-	entries, err := os.ReadDir(archivesDir)
-	if err != nil {
-		t.Fatalf("handoffs dir missing: %v", err)
-	}
-	if len(entries) != 1 {
-		t.Errorf("expected 1 archived file, got %d", len(entries))
-	}
-
-	// Active doc must be the new one (branch=feat)
-	data, err := os.ReadFile(Path(root))
-	if err != nil {
-		t.Fatalf("active doc missing: %v", err)
-	}
-	meta, _ := fm.Parse(string(data))
-	if meta["branch"] != "feat" {
-		t.Errorf("active doc branch: got %q want feat", meta["branch"])
-	}
-}
-
-func TestWriteDoesNotArchiveConsumed(t *testing.T) {
-	root := t.TempDir()
-	now := time.Now()
-	s := State{Branch: "main", Head: "abc1234", Health: 80}
-
-	// Write and then archive manually (simulates a consumed doc)
-	if err := Write(root, s, "graceful", now); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Archive(root); err != nil {
-		t.Fatal(err)
-	}
-
-	// At this point the active doc is gone. Write a new one.
-	if err := Write(root, s, "urgent", now); err != nil {
-		t.Fatalf("Write after archive: %v", err)
-	}
-
-	// Should have exactly 1 archived file (the manually archived one), not 2
-	archivesDir := filepath.Join(root, ".claude", "project", "handoffs")
-	entries, err := os.ReadDir(archivesDir)
-	if err != nil {
-		t.Fatalf("handoffs dir missing: %v", err)
-	}
-	if len(entries) != 1 {
-		t.Errorf("expected 1 archived file, got %d", len(entries))
+	if _, err := Archive(root); err == nil {
+		t.Error("Archive with no active doc should error")
 	}
 }

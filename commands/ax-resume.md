@@ -3,8 +3,8 @@ description: Resume work from a saved handoff. Routes on `apex handoff status` e
 ---
 
 <flow>
-The binary owns the present/fresh/stale/absent verdict; you own the reconciliation and the
-go-ahead.
+The binary owns the present/fresh/stale/absent verdict and the fact table; you own the
+reconciliation and the go-ahead. Every `apex handoff` verb except `archive` is read-only.
 
 1. **Status.** Run `apex handoff status` and read the exit code (the routing signal):
 
@@ -15,17 +15,19 @@ go-ahead.
    | `1` | no active handoff | step 4 |
 
 2. **Read + reconcile (codes 0 / 2).** Read `.claude/project/handoff.md`. Reconcile its recorded
-   state against reality with READ-ONLY checks — `git status --short`, `git log --oneline`,
-   `apex followups list`, `apex health show`. Do NOT run `apex handoff scan` here; it would
-   overwrite the doc you're consuming. For code `2`, lead with the drift: HEAD moved since capture,
-   so call out what changed (new commits, branch switch) before trusting the "Next" step.
+   state against reality with `apex handoff scan` — it is read-only and prints the same fact table
+   the doc was captured from, so a field-by-field diff surfaces every drift at once. Widen with
+   `git status --short`, `git log --oneline` as needed. For code `2`, lead with the drift: HEAD
+   moved since capture, so call out what changed (new commits, branch switch) before trusting the
+   "Next" step.
 
 3. **Present + confirm.** Summarize: where the work stopped, the next action, open threads, and any
    reconciliation deltas. Wait for the user to confirm the resume point.
 
 4. **Absent (code 1).** No handoff. Offer three routes — let the user pick:
-   - **rescan-reconstruct** — `apex handoff scan` writes a fresh skeleton from current git +
-     followups + reminders; reconstruct the narrative from history, then present as in step 3.
+   - **rescan-reconstruct** — `apex handoff scan` reports current git + followups + reminders +
+     health + signals; reconstruct the narrative from that plus history, then present as in step 3.
+     No doc is written on this route — you are resuming, not capturing.
    - **tell me where** — the user points at the resume context directly.
    - **start fresh** — no resume; proceed as a new session.
 
