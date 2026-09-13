@@ -9,7 +9,7 @@
       "name": "apex-claude",
       "source": "./",
       "description": "Apex Claude — a coding-workflow agent layer: plan, build (TDD), review, ship, improve. Output style, lifecycle subagents, auto-firing skills, a session-start hook, and the apex Go backbone for deterministic work.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "license": "MIT",
       "keywords": ["workflow", "tdd", "code-review", "agents", "apex"],
       "category": "workflow"

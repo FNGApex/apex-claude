@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"apexclaude/internal/update"
+	"apexclaude/internal/version"
 )
 
 // isolateCache redirects os.UserCacheDir to a fresh temp dir so tests never
@@ -94,13 +95,14 @@ func TestSessionStartNudgesOnNewerCachedVersion(t *testing.T) {
 	if code := SessionStart(nil, &buf); code != 0 {
 		t.Fatalf("hook must never fail the session, got %d", code)
 	}
-	if !strings.Contains(buf.String(), "Apex update available: v0.2.0 → v9.9.9 — run 'apex update'") {
+	if !strings.Contains(buf.String(), "Apex update available: v"+version.Version+" → v9.9.9 — run 'apex update'") {
 		t.Errorf("expected update nudge\n%s", buf.String())
 	}
 }
 
 func TestSessionStartNoNudgeOnEqualOrOlderCachedVersion(t *testing.T) {
-	for _, latest := range []string{"v0.2.0", "v0.1.0"} {
+	// Equal to the running version, and strictly older.
+	for _, latest := range []string{"v" + version.Version, "v0.0.1"} {
 		t.Run(latest, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("APEX_REPO", root)
@@ -199,7 +201,7 @@ func TestSessionStartSpawnsOnStaleOrMissingCache(t *testing.T) {
 
 		if err := update.WriteCache(update.CachePath(), update.Cache{
 			CheckedAt: time.Now().UTC().Add(-48 * time.Hour).Format(time.RFC3339),
-			Latest:    "v0.2.0",
+			Latest:    "v" + version.Version,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -220,7 +222,7 @@ func TestSessionStartNoSpawnOnFreshCache(t *testing.T) {
 
 	if err := update.WriteCache(update.CachePath(), update.Cache{
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),
-		Latest:    "v0.2.0",
+		Latest:    "v" + version.Version,
 	}); err != nil {
 		t.Fatal(err)
 	}

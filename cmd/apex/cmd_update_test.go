@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"apexclaude/internal/version"
 )
 
 // isolateCache redirects os.UserCacheDir to a fresh temp dir so tests never
@@ -53,7 +55,7 @@ func redirectServer(t *testing.T, tag string) *httptest.Server {
 
 func TestUpdateCheckUpToDate(t *testing.T) {
 	isolateCache(t)
-	srv := redirectServer(t, "v0.2.0") // matches version.Version
+	srv := redirectServer(t, "v"+version.Version) // exactly the running version
 	t.Setenv("APEX_UPDATE_BASE_URL", srv.URL)
 
 	code, out := captureStdout(t, func() int { return runUpdateCheck(nil) })
@@ -156,7 +158,7 @@ func TestUpdateCheckQuietKeepsStderrOnFailure(t *testing.T) {
 
 func TestRunUpdateDispatchesCheckSubcommand(t *testing.T) {
 	isolateCache(t)
-	srv := redirectServer(t, "v0.2.0")
+	srv := redirectServer(t, "v"+version.Version)
 	t.Setenv("APEX_UPDATE_BASE_URL", srv.URL)
 
 	code, out := captureStdout(t, func() int { return runUpdate([]string{"check"}) })
