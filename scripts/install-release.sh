@@ -16,7 +16,9 @@
 #     CLAUDE_CONFIG_DIR  install root      (default: $HOME/.claude)
 #
 # What it does (all idempotent, safe to re-run):
-#   1. Detects OS/arch and downloads apex-claude-<os>-<arch>.zip from the release.
+#   1. Detects OS/arch, downloads apex-claude-<os>-<arch>.zip from the release,
+#      and verifies it against the release's SHA256SUMS (warns if the release
+#      predates checksums; refuses on mismatch).
 #   2. Removes any prior PLUGIN install of Apex (migration).
 #   3. Copies artifacts into ~/.claude/{commands,agents,skills,output-styles}.
 #   4. Installs the binary into ~/.claude/bin/apex.
@@ -79,17 +81,45 @@ case "$arch_raw" in
 esac
 
 ASSET="apex-claude-$OS-$ARCH.zip"
-if [ "$VERSION" = "latest" ]; then
-  URL="https://github.com/$REPO/releases/latest/download/$ASSET"
-else
-  URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
-fi
+# asset_url <name> — release-asset URL for $VERSION. APEX_UPDATE_BASE_URL
+# overrides the host as <base>/<version>/<name>, the same seam `apex update`
+# and install.ps1 honor, so a local server can stand in for GitHub in tests.
+asset_url() {
+  if [ -n "${APEX_UPDATE_BASE_URL:-}" ]; then
+    printf '%s/%s/%s' "${APEX_UPDATE_BASE_URL%/}" "$VERSION" "$1"
+  elif [ "$VERSION" = "latest" ]; then
+    printf 'https://github.com/%s/releases/latest/download/%s' "$REPO" "$1"
+  else
+    printf 'https://github.com/%s/releases/download/%s/%s' "$REPO" "$VERSION" "$1"
+  fi
+}
+URL="$(asset_url "$ASSET")"
 
 # --- 1. download + extract ---------------------------------------------------
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/apex-install.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 ZIP="$TMP/$ASSET"
 SRC="$TMP/bundle"
+
+# --- 1a. fetch SHA256SUMS (before the bundle, same $VERSION) -----------------
+# Only an HTTP 404 means "pre-checksum release": warn and install unverified.
+# Any other failure dies — skipping verification on a flaky fetch would make the
+# check optional. For 'latest', a release published between this fetch and the
+# bundle download yields a mismatch: loud, safe, and cleared by a re-run.
+SUMS_FILE="$TMP/SHA256SUMS"
+SUMS_URL="$(asset_url SHA256SUMS)"
+if have curl; then
+  code="$(curl -sSL -o "$SUMS_FILE" -w '%{http_code}' "$SUMS_URL")" || code="000"
+else
+  # wget exits non-zero on a 404; under pipefail that would fail the whole
+  # substitution and set -e would abort before the 404 is classified.
+  code="$( { wget --server-response -qO "$SUMS_FILE" "$SUMS_URL" 2>&1 || true; } | awk '/^ *HTTP\//{c=$2} END{print c+0}')"
+fi
+case "$code" in
+  200) SUMS_STATE=present ;;
+  404) SUMS_STATE=missing ;;
+  *)   die "could not fetch SHA256SUMS from $SUMS_URL (HTTP $code)" ;;
+esac
 
 say "Downloading $VERSION bundle ($OS/$ARCH)"
 if have curl; then
@@ -98,6 +128,23 @@ if have curl; then
 else
   wget -qO "$ZIP" "$URL" \
     || die "download failed from $URL — check the version tag and that a release exists"
+fi
+
+# --- 1b. verify ---------------------------------------------------------------
+if [ "$SUMS_STATE" = missing ]; then
+  printf '\033[1;33mwarning:\033[0m release %s has no SHA256SUMS (pre-checksum release) — installing unverified\n' "$VERSION" >&2
+else
+  expected="$(awk -v a="$ASSET" '$2 == a {print tolower($1)}' "$SUMS_FILE" | head -1)"
+  [ -n "$expected" ] || die "SHA256SUMS for $VERSION has no entry for $ASSET — refusing to install"
+  if have sha256sum; then
+    actual="$(sha256sum "$ZIP" | awk '{print $1}')"
+  elif have shasum; then
+    actual="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
+  else
+    die "need 'sha256sum' or 'shasum' to verify the bundle"
+  fi
+  [ "$actual" = "$expected" ] || die "checksum mismatch for $ASSET (expected $expected, got $actual) — download corrupt or tampered"
+  say "Checksum verified"
 fi
 
 say "Extracting"

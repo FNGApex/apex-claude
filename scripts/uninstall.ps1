@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  uninstall.ps1 — remove the loose Apex Claude artifacts on native Windows.
+  uninstall.ps1 -- remove the loose Apex Claude artifacts on native Windows.
 
 .DESCRIPTION
   The Windows-native counterpart to scripts/uninstall.sh. Removes the ax-*
@@ -56,9 +56,15 @@ if (Test-Path $settingsPath) {
       if ($hooks.PSObject.Properties.Name.Count -eq 0) {
         $data.PSObject.Properties.Remove('hooks')
       }
-      ($data | ConvertTo-Json -Depth 20) | Set-Content -Path $settingsPath -Encoding UTF8
+      # UTF-8 WITHOUT a BOM. Windows PowerShell 5.1's `Set-Content -Encoding UTF8`
+      # prepends one, and JSON parsers (Go's encoding/json, and so `apex doctor`)
+      # reject it -- every 5.1 install then read as having no hooks wired.
+      # [IO.File] resolves relative paths against the process cwd, not the
+      # PowerShell location, so resolve first.
+      $settingsFull = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($settingsPath)
+      [System.IO.File]::WriteAllText($settingsFull, ($data | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding $false))
     }
   }
 }
 
-Write-Host "✔ Apex Claude removed. Restart Claude Code to drop /ax-*." -ForegroundColor Green
+Write-Host "[ok] Apex Claude removed. Restart Claude Code to drop /ax-*." -ForegroundColor Green

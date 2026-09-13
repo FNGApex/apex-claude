@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  publish.ps1 — cut a GitHub Release of Apex Claude with prebuilt bundles.
+  publish.ps1 -- cut a GitHub Release of Apex Claude with prebuilt bundles.
 
 .DESCRIPTION
   Cross-compiles the apex backbone for the release matrix and, for each
@@ -16,7 +16,7 @@
 
   The zips are uploaded to a GitHub Release via `gh`. The Windows bundle is
   what scripts/install.ps1 downloads for `irm ... | iex` installs, so a fresh
-  Windows box needs no Go, make, bash, or python — just the prebuilt zip.
+  Windows box needs no Go, make, bash, or python -- just the prebuilt zip.
 
   This is the maintainer "ship to prod" step. End users never run it.
 
@@ -46,7 +46,7 @@ $RepoRoot = Split-Path $PSScriptRoot -Parent
 $Dist     = Join-Path $RepoRoot 'dist'
 $Stage    = Join-Path $Dist 'stage'
 
-# Release matrix — mirrors RELEASE_TARGETS in the Makefile.
+# Release matrix -- mirrors RELEASE_TARGETS in the Makefile.
 $Targets = @(
   @{ os = 'darwin';  arch = 'arm64' },
   @{ os = 'darwin';  arch = 'amd64' },
@@ -59,21 +59,21 @@ function Say  { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
 function Die  { param($m) Write-Host "error: $m" -ForegroundColor Red; exit 1 }
 
 # --- preflight ---------------------------------------------------------------
-if (-not (Get-Command go -ErrorAction SilentlyContinue)) { Die "'go' is not on PATH — needed to build the release matrix" }
+if (-not (Get-Command go -ErrorAction SilentlyContinue)) { Die "'go' is not on PATH -- needed to build the release matrix" }
 if (-not $DryRun -and -not (Get-Command gh -ErrorAction SilentlyContinue)) {
-  Die "'gh' is not on PATH — needed to create the GitHub Release (or pass -DryRun)"
+  Die "'gh' is not on PATH -- needed to create the GitHub Release (or pass -DryRun)"
 }
 
 # --- resolve version ---------------------------------------------------------
 $versionGo = Join-Path $RepoRoot 'internal/version/version.go'
 $m = Select-String -Path $versionGo -Pattern 'const Version = "([^"]+)"' | Select-Object -First 1
-if (-not $m) { Die "could not read Version const from $versionGo — pass -Version explicitly" }
+if (-not $m) { Die "could not read Version const from $versionGo -- pass -Version explicitly" }
 $ConstVersion = 'v' + $m.Matches[0].Groups[1].Value
 
 if (-not $Version) {
   $Version = $ConstVersion
 } elseif ($Version -ne $ConstVersion) {
-  Die "-Version $Version does not match the const in $versionGo ($ConstVersion) — bump the const or drop -Version"
+  Die "-Version $Version does not match the const in $versionGo ($ConstVersion) -- bump the const or drop -Version"
 }
 if ($Version -notmatch '^v\d+\.\d+\.\d+') { Die "version '$Version' should look like v1.2.3" }
 Say "Publishing $Version"
@@ -94,7 +94,7 @@ try {
       New-Item -ItemType Directory -Path (Join-Path $sdir $sub) -Force | Out-Null
     }
 
-    # Build straight with the Go toolchain — no make dependency, so publish
+    # Build straight with the Go toolchain -- no make dependency, so publish
     # works on a stock Windows box. Flags mirror the Makefile release target.
     $env:GOOS = $os; $env:GOARCH = $arch; $env:CGO_ENABLED = '0'
     & go build -trimpath -ldflags '-s -w' -o (Join-Path $sdir "apex$ext") ./cmd/apex
@@ -118,7 +118,7 @@ try {
 $zips = Get-ChildItem (Join-Path $Dist 'apex-claude-*.zip')
 Say "Built $($zips.Count) bundles into $Dist"
 
-# SHA256SUMS in coreutils format — lower-hex, two spaces, bare filename — so
+# SHA256SUMS in coreutils format -- lower-hex, two spaces, bare filename -- so
 # both `sha256sum -c` and `apex update` can verify the bundles. LF-only, no
 # BOM: sha256sum rejects CRLF/BOM'd checksum lines.
 $Sums = Join-Path $Dist 'SHA256SUMS'
@@ -129,7 +129,7 @@ $sumLines = $zips | ForEach-Object {
 Say "checksums -> $Sums"
 
 if ($DryRun) {
-  Write-Host "`n✔ Dry run — bundles in $Dist, no release created." -ForegroundColor Green
+  Write-Host "`n[ok] Dry run -- bundles in $Dist, no release created." -ForegroundColor Green
   return
 }
 
@@ -143,7 +143,7 @@ $installers = @("$PSScriptRoot/install.ps1", "$PSScriptRoot/install-release.sh")
 
 $exists = (& gh release view $Version 2>$null) -and ($LASTEXITCODE -eq 0)
 if ($exists) {
-  Say "Release $Version exists — uploading assets (--clobber)"
+  Say "Release $Version exists -- uploading assets (--clobber)"
   & gh release upload $Version $zips.FullName $Sums @installers --clobber
 } else {
   Say "Creating release $Version"
@@ -152,6 +152,6 @@ if ($exists) {
 }
 if ($LASTEXITCODE -ne 0) { Die "gh release step failed" }
 
-Write-Host "`n✔ Published $Version." -ForegroundColor Green
+Write-Host "`n[ok] Published $Version." -ForegroundColor Green
 Write-Host "  Linux/macOS: curl -fsSL https://github.com/FNGApex/apex-claude/releases/latest/download/install-release.sh | bash"
 Write-Host "  Windows    : irm https://github.com/FNGApex/apex-claude/releases/latest/download/install.ps1 | iex"

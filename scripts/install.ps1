@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
-  install.ps1 — install Apex Claude on native Windows (no bash/python/go).
+  install.ps1 -- install Apex Claude on native Windows (no bash/python/go).
 
 .DESCRIPTION
   The Windows-native counterpart to scripts/install.sh. Downloads the prebuilt
   release bundle (apex.exe + commands/agents/skills/output-style) published by
   scripts/publish.ps1, copies the loose artifacts into ~/.claude, installs the
   binary into ~/.claude/bin, and wires the SessionStart hook into
-  ~/.claude/settings.json — stripping any legacy Apex PreToolUse group and
+  ~/.claude/settings.json -- stripping any legacy Apex PreToolUse group and
   preserving every other setting.
 
   Designed for one-line install:
@@ -19,7 +19,7 @@
       $env:CLAUDE_CONFIG_DIR install root      (default: $env:USERPROFILE\.claude)
 
   Runs on Windows PowerShell 5.1 and PowerShell 7+. It does NOT touch
-  ~/.claude/CLAUDE.md — the Apex spine is opt-in. Remove with uninstall.ps1.
+  ~/.claude/CLAUDE.md -- the Apex spine is opt-in. Remove with uninstall.ps1.
 
 .PARAMETER Version
   Release tag to install (e.g. v0.2.0). Default: latest.
@@ -49,26 +49,81 @@ function Die { param($m) Write-Host "error: $m" -ForegroundColor Red; exit 1 }
 
 # --- 1. resolve download URL -------------------------------------------------
 $asset = 'apex-claude-windows-amd64.zip'
-$url = if ($Version -eq 'latest') {
-  "https://github.com/$Repo/releases/latest/download/$asset"
-} else {
-  "https://github.com/$Repo/releases/download/$Version/$asset"
+
+# assetUrl builds a release-asset URL for $Version. APEX_UPDATE_BASE_URL
+# overrides the host wholesale as <base>/<version>/<name> -- the same seam
+# `apex update` honors -- so a local server can stand in for GitHub in tests.
+function Get-AssetUrl { param($name)
+  if ($env:APEX_UPDATE_BASE_URL) { return "$($env:APEX_UPDATE_BASE_URL.TrimEnd('/'))/$Version/$name" }
+  if ($Version -eq 'latest') { return "https://github.com/$Repo/releases/latest/download/$name" }
+  return "https://github.com/$Repo/releases/download/$Version/$name"
 }
+$url = Get-AssetUrl $asset
 
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("apex-install-" + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 $zip = Join-Path $tmp $asset
 
 try {
+  # --- 1a. fetch SHA256SUMS ----------------------------------------------------
+  # Fetched BEFORE the bundle, from the same $Version. Fetching it after a
+  # multi-MB download made Windows PowerShell 5.1 reuse a pooled github.com
+  # connection the server had already closed ("connection was closed
+  # unexpectedly") -- so order matters, and a transport error gets one retry.
+  # Only an HTTP 404 means "pre-checksum release": warn and proceed. Any other
+  # failure dies -- silently skipping verification on a flaky fetch would turn
+  # the check into a suggestion. For 'latest', a release published between
+  # this fetch and the bundle download yields a mismatch: loud, safe, re-runnable.
+  $sumsUrl = Get-AssetUrl 'SHA256SUMS'
+  $sums = $null
+  $sumsMissing = $false
+  foreach ($attempt in 1..2) {
+    try {
+      $sums = (Invoke-WebRequest -Uri $sumsUrl -UseBasicParsing).Content
+      if ($sums -is [byte[]]) { $sums = [System.Text.Encoding]::UTF8.GetString($sums) }
+      break
+    } catch {
+      $resp = $_.Exception.Response
+      if ($resp -and [int]$resp.StatusCode -eq 404) { $sumsMissing = $true; break }
+      if ($resp -or $attempt -eq 2) {
+        Die "could not fetch SHA256SUMS from $sumsUrl ($($_.Exception.Message))"
+      }
+    }
+  }
+
   Say "Downloading $Version bundle"
   $oldProgress = $ProgressPreference
   $ProgressPreference = 'SilentlyContinue'
   try {
     Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
   } catch {
-    Die "download failed from $url — check the version tag and that a release exists ($($_.Exception.Message))"
+    Die "download failed from $url -- check the version tag and that a release exists ($($_.Exception.Message))"
   } finally {
     $ProgressPreference = $oldProgress
+  }
+
+  # --- 1b. verify checksum -----------------------------------------------------
+  if ($sumsMissing) {
+    Write-Host "warning: release $Version has no SHA256SUMS (pre-checksum release) -- installing unverified" -ForegroundColor Yellow
+  } else {
+    $expected = $null
+    foreach ($line in ($sums -split "`n")) {
+      $parts = $line.Trim() -split '\s+', 2
+      if ($parts.Count -eq 2 -and $parts[1] -eq $asset) { $expected = $parts[0].ToLowerInvariant() }
+    }
+    if (-not $expected) { Die "SHA256SUMS for $Version has no entry for $asset -- refusing to install" }
+    # .NET directly, not Get-FileHash: Windows PowerShell 5.1 launched from a
+    # PowerShell 7 session inherits a PSModulePath that shadows its own
+    # Microsoft.PowerShell.Utility, and Get-FileHash then fails to resolve.
+    $stream = [System.IO.File]::OpenRead($zip)
+    try {
+      $sha = [System.Security.Cryptography.SHA256]::Create()
+      $actual = -join ($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') })
+    } finally { $stream.Dispose() }
+    if ($actual -ne $expected) {
+      Die "checksum mismatch for $asset (expected $expected, got $actual) -- download corrupt or tampered"
+    }
+    Say "Checksum verified"
   }
 
   Say "Extracting"
@@ -76,7 +131,7 @@ try {
   Expand-Archive -Path $zip -DestinationPath $src -Force
 
   $exe = Join-Path $src 'apex.exe'
-  if (-not (Test-Path $exe)) { Die "bundle is missing apex.exe — corrupt or wrong asset" }
+  if (-not (Test-Path $exe)) { Die "bundle is missing apex.exe -- corrupt or wrong asset" }
 
   # --- 2. drop any prior plugin install (migration) --------------------------
   if (Get-Command claude -ErrorAction SilentlyContinue) {
@@ -97,7 +152,7 @@ try {
   Copy-Item (Join-Path $src 'agents/ax-*.md')   (Join-Path $ConfigDir 'agents')   -Force
   Copy-Item (Join-Path $src 'output-styles/apex.md') (Join-Path $ConfigDir 'output-styles/apex.md') -Force
 
-  # Skills are dir/SKILL.md — replace each ax-* skill dir wholesale.
+  # Skills are dir/SKILL.md -- replace each ax-* skill dir wholesale.
   Get-ChildItem (Join-Path $src 'skills') -Directory | ForEach-Object {
     $dest = Join-Path $ConfigDir "skills/$($_.Name)"
     if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
@@ -124,7 +179,7 @@ try {
     $raw = Get-Content $settingsPath -Raw
     if ($raw.Trim()) {
       try { $data = $raw | ConvertFrom-Json } catch {
-        Die "settings.json is not valid JSON — fix it by hand and re-run ($($_.Exception.Message))"
+        Die "settings.json is not valid JSON -- fix it by hand and re-run ($($_.Exception.Message))"
       }
     }
   }
@@ -161,7 +216,13 @@ try {
     elseif ($merged.Count -gt 0) { $hooks | Add-Member -NotePropertyName $event -NotePropertyValue $merged }
   }
 
-  ($data | ConvertTo-Json -Depth 20) | Set-Content -Path $settingsPath -Encoding UTF8
+  # UTF-8 WITHOUT a BOM. Windows PowerShell 5.1's `Set-Content -Encoding UTF8`
+  # prepends one, and JSON parsers (Go's encoding/json, and so `apex doctor`)
+  # reject it -- every 5.1 install then read as having no hooks wired.
+  # [IO.File] resolves relative paths against the process cwd, not the
+  # PowerShell location, so resolve first.
+  $settingsFull = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($settingsPath)
+  [System.IO.File]::WriteAllText($settingsFull, ($data | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding $false))
   Write-Host "  hooks wired -> $binPath"
 
   # --- done ------------------------------------------------------------------
@@ -170,7 +231,7 @@ try {
   $skillCount = (Get-ChildItem (Join-Path $ConfigDir 'skills') -Directory -Filter 'ax-*').Count
 
   Write-Host ""
-  Write-Host "✔ Apex Claude installed (loose artifacts)." -ForegroundColor Green
+  Write-Host "[ok] Apex Claude installed (loose artifacts)." -ForegroundColor Green
   Write-Host "  commands : $cmdCount  -> $ConfigDir\commands"
   Write-Host "  agents   : $agentCount  -> $ConfigDir\agents"
   Write-Host "  skills   : $skillCount   -> $ConfigDir\skills"
