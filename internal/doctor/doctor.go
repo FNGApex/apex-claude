@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"apexclaude/internal/layout"
@@ -51,6 +52,15 @@ func Run(w io.Writer) int {
 	} else {
 		check("plugin.json is valid JSON", validJSON(filepath.Join(root, ".claude-plugin", "plugin.json")))
 		check("hooks/hooks.json is valid JSON", validJSON(filepath.Join(root, "hooks", "hooks.json")))
+		// bin/ is gitignored, so a fresh clone or a marketplace plugin install
+		// has hooks.json pointing at a binary that was never built. Left
+		// unchecked that surfaces as a hook failing every session; make it a
+		// loud, deterministic failure here instead.
+		if missing, ok := hookTargetsPresent(root); !ok {
+			check("hooks.json targets exist (missing: "+strings.Join(missing, ", ")+") — run `make build`", false)
+		} else {
+			check("hooks.json targets exist", true)
+		}
 	}
 	check("output-styles/ has a style", countGlob(root, "output-styles", "*.md") >= 1)
 	check("agents/ has an agent", countGlob(root, "agents", "*.md") >= 1)
@@ -126,6 +136,54 @@ func pathsEqual(a, b string) bool {
 		return strings.EqualFold(a, b)
 	}
 	return a == b
+}
+
+// hookTargetsPresent resolves every command in hooks/hooks.json to a path and
+// reports which of those binaries are absent. ${CLAUDE_PLUGIN_ROOT} expands to
+// root; the command's first whitespace-separated token is the binary. Windows
+// installs name it apex.exe, so either spelling satisfies the check.
+func hookTargetsPresent(root string) (missing []string, ok bool) {
+	b, err := os.ReadFile(filepath.Join(root, "hooks", "hooks.json"))
+	if err != nil {
+		return nil, true // validity is the neighbouring check's job
+	}
+	var cfg struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if json.Unmarshal(b, &cfg) != nil {
+		return nil, true
+	}
+	seen := map[string]bool{}
+	for _, groups := range cfg.Hooks {
+		for _, g := range groups {
+			for _, h := range g.Hooks {
+				fields := strings.Fields(h.Command)
+				if len(fields) == 0 {
+					continue
+				}
+				bin := strings.ReplaceAll(fields[0], "${CLAUDE_PLUGIN_ROOT}", root)
+				bin = filepath.FromSlash(bin)
+				if seen[bin] {
+					continue
+				}
+				seen[bin] = true
+				if !fileExists(bin) && !fileExists(bin+".exe") {
+					missing = append(missing, filepath.Base(bin))
+				}
+			}
+		}
+	}
+	sort.Strings(missing)
+	return missing, len(missing) == 0
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
 }
 
 func validJSON(p string) bool {

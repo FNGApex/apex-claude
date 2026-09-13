@@ -159,3 +159,54 @@ func TestDirOnPathResolvesSymlinks(t *testing.T) {
 		t.Error("real PATH entry should match the symlinked dir")
 	}
 }
+
+// --- followup 001: hooks.json must not point at a binary that was never built ---
+
+// devRoot lays down a dev/plugin layout whose hooks.json references the
+// gitignored bin/apex, with no binary present.
+func devRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeArtifacts(t, root)
+	os.MkdirAll(filepath.Join(root, ".claude-plugin"), 0o755)
+	os.WriteFile(filepath.Join(root, ".claude-plugin", "plugin.json"), []byte(`{"name":"x"}`), 0o644)
+	os.MkdirAll(filepath.Join(root, "hooks"), 0o755)
+	os.WriteFile(filepath.Join(root, "hooks", "hooks.json"), []byte(
+		`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"${CLAUDE_PLUGIN_ROOT}/bin/apex hooks session-start"}]}]}}`), 0o644)
+	return root
+}
+
+func TestDevLayoutFailsWhenHookBinaryMissing(t *testing.T) {
+	root := devRoot(t)
+	code, out := run(t, root)
+	if code != 1 {
+		t.Fatalf("want failure when bin/apex is absent, got %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "hooks.json targets exist") {
+		t.Errorf("expected a hook-target failure\n%s", out)
+	}
+	if !strings.Contains(out, "make build") {
+		t.Errorf("failure should point at the fix\n%s", out)
+	}
+}
+
+func TestDevLayoutPassesWhenHookBinaryBuilt(t *testing.T) {
+	root := devRoot(t)
+	os.MkdirAll(filepath.Join(root, "bin"), 0o755)
+	os.WriteFile(filepath.Join(root, "bin", "apex"), []byte("#!/bin/sh\n"), 0o755)
+
+	if code, out := run(t, root); code != 0 {
+		t.Fatalf("want pass once the binary exists, got %d\n%s", code, out)
+	}
+}
+
+// A Windows checkout builds apex.exe; the same hooks.json entry must satisfy it.
+func TestDevLayoutAcceptsExeSuffix(t *testing.T) {
+	root := devRoot(t)
+	os.MkdirAll(filepath.Join(root, "bin"), 0o755)
+	os.WriteFile(filepath.Join(root, "bin", "apex.exe"), []byte("MZ"), 0o644)
+
+	if code, out := run(t, root); code != 0 {
+		t.Fatalf("want pass with apex.exe, got %d\n%s", code, out)
+	}
+}
