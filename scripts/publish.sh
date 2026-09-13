@@ -63,11 +63,18 @@ if [ "$DRYRUN" -eq 0 ]; then
 fi
 
 # --- resolve version ---------------------------------------------------------
+# The const lives in internal/version (it moved out of cmd/apex/main.go). A
+# release tag that disagrees with the embedded const would ship binaries whose
+# `apex version` and update check report the wrong version, so an explicit
+# --version must match it — the same guard publish.ps1 enforces.
+version_go="$REPO_ROOT/internal/version/version.go"
+raw="$(sed -n 's/^const Version = "\([^"]*\)".*/\1/p' "$version_go" | head -1)"
+[ -n "$raw" ] || die "could not read Version const from $version_go"
+CONST_VERSION="v$raw"
 if [ -z "$VERSION" ]; then
-  main_go="$REPO_ROOT/cmd/apex/main.go"
-  raw="$(sed -n 's/^const version = "\([^"]*\)".*/\1/p' "$main_go" | head -1)"
-  [ -n "$raw" ] || die "could not read version const from $main_go — pass --version explicitly"
-  VERSION="v$raw"
+  VERSION="$CONST_VERSION"
+elif [ "$VERSION" != "$CONST_VERSION" ]; then
+  die "--version $VERSION does not match the const in $version_go ($CONST_VERSION) — bump the const or drop --version"
 fi
 case "$VERSION" in
   v[0-9]*.[0-9]*.[0-9]*) ;;
@@ -129,6 +136,15 @@ ZIPS=()
 for z in "$DIST"/apex-claude-*.zip; do ZIPS+=("$z"); done
 say "Built ${#ZIPS[@]} bundles into $DIST"
 
+# SHA256SUMS in coreutils format (lower-hex, two spaces, bare filename), the
+# contract `apex update` and install.ps1 verify against. Without it a release
+# published from this script makes every `apex update` fail verification.
+# macOS ships shasum, not sha256sum.
+if have sha256sum; then hasher="sha256sum"; elif have shasum; then hasher="shasum -a 256"; else die "need 'sha256sum' or 'shasum' to write SHA256SUMS"; fi
+SUMS="$DIST/SHA256SUMS"
+( cd "$DIST" && $hasher apex-claude-*.zip > SHA256SUMS ) || die "could not write $SUMS"
+say "checksums -> $SUMS"
+
 if [ "$DRYRUN" -eq 1 ]; then
   printf '\n\033[1;32m✔ Dry run — bundles in %s, no release created.\033[0m\n' "$DIST"
   exit 0
@@ -154,10 +170,10 @@ irm https://github.com/$REPO/releases/latest/download/install.ps1 | iex
 
 if gh release view "$VERSION" >/dev/null 2>&1; then
   say "Release $VERSION exists — uploading assets (--clobber)"
-  gh release upload "$VERSION" "${ZIPS[@]}" "${INSTALLERS[@]}" --clobber || die "gh release upload failed"
+  gh release upload "$VERSION" "${ZIPS[@]}" "$SUMS" "${INSTALLERS[@]}" --clobber || die "gh release upload failed"
 else
   say "Creating release $VERSION"
-  gh release create "$VERSION" "${ZIPS[@]}" "${INSTALLERS[@]}" \
+  gh release create "$VERSION" "${ZIPS[@]}" "$SUMS" "${INSTALLERS[@]}" \
     --title "Apex Claude $VERSION" --notes "$NOTES" || die "gh release create failed"
 fi
 
