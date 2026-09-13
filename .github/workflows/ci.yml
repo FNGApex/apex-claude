@@ -10,16 +10,31 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Windows and macOS run the full suite too: the auto-update binary swap,
+    # its rollback, and the .old sweep are Windows-only code paths, and darwin
+    # binaries ship in every release. Ubuntu-only CI never executed any of it.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26'
           cache: true
+          # Zero-dependency module: there is no go.sum to key the cache on.
+          cache-dependency-path: go.mod
 
+      # Formatting is OS-independent, and a Windows checkout converts line
+      # endings to CRLF, which gofmt would flag on every file.
       - name: gofmt
+        if: runner.os == 'Linux'
         run: |
           unformatted=$(gofmt -l cmd internal)
           if [ -n "$unformatted" ]; then
@@ -32,11 +47,15 @@ jobs:
       - name: test
         run: go test ./...
 
+      # go build, not make: make is not guaranteed on Windows runners. The
+      # flags mirror the Makefile's build target.
       - name: build
-        run: make build
+        run: |
+          ext=""; [ "$RUNNER_OS" = "Windows" ] && ext=".exe"
+          go build -trimpath -ldflags "-s -w" -o "bin/apex$ext" ./cmd/apex
 
       - name: doctor
         run: ./bin/apex doctor
 
-      - name: validate artifacts
-        run: ./bin/apex validate
+      - name: validate
+        run: ./bin/apex validate all
