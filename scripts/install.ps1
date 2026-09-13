@@ -6,8 +6,9 @@
   The Windows-native counterpart to scripts/install.sh. Downloads the prebuilt
   release bundle (apex.exe + commands/agents/skills/output-style) published by
   scripts/publish.ps1, copies the loose artifacts into ~/.claude, installs the
-  binary into ~/.claude/bin, and wires the PreToolUse + SessionStart hooks into
-  ~/.claude/settings.json — preserving every other setting.
+  binary into ~/.claude/bin, and wires the SessionStart hook into
+  ~/.claude/settings.json — stripping any legacy Apex PreToolUse group and
+  preserving every other setting.
 
   Designed for one-line install:
 

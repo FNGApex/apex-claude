@@ -14,8 +14,8 @@
 #      /apex-claude:ax-* showing up as duplicates).
 #   3. Copies artifacts into ~/.claude/{commands,agents,skills,output-styles}.
 #   4. Installs the binary into ~/.claude/bin/apex.
-#   5. Wires the PreToolUse + SessionStart hooks into ~/.claude/settings.json,
-#      preserving every other setting.
+#   5. Wires the SessionStart hook into ~/.claude/settings.json, stripping any
+#      legacy Apex PreToolUse group and preserving every other setting.
 #
 # It does NOT touch ~/.claude/CLAUDE.md — the Apex spine is opt-in. See README.
 #
