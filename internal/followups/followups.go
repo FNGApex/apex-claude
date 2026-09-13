@@ -16,20 +16,47 @@ import (
 
 func dir(root string) string { return filepath.Join(root, ".claude", "project", "followups") }
 
+// closedFile is the append-only ledger of retired ids. nextID reads it so a
+// closed id is never reissued.
+const closedFile = "CLOSED.md"
+
 // Entry is one follow-up record.
 type Entry struct {
 	ID, Title, Kind, Severity, Origin, Status, Created string
 }
 
+// nextID returns the next %03d id, taking the high-water mark over BOTH the
+// live entry files and the CLOSED.md ledger.
+//
+// Close removes the entry file, so counting live files alone hands a retired id
+// straight back out: close 003 and the next add is also 003, leaving CLOSED.md
+// attributing a finished title to a different, open item. Ids are permanent
+// once issued — the ledger is what makes them so.
 func nextID(d string) string {
 	max := 0
-	entries, _ := os.ReadDir(d)
-	for _, e := range entries {
-		var n int
-		if _, err := fmt.Sscanf(strings.TrimSuffix(e.Name(), ".md"), "%d", &n); err == nil && n > max {
+	bump := func(n int) {
+		if n > max {
 			max = n
 		}
 	}
+
+	entries, _ := os.ReadDir(d)
+	for _, e := range entries {
+		var n int
+		if _, err := fmt.Sscanf(strings.TrimSuffix(e.Name(), ".md"), "%d", &n); err == nil {
+			bump(n)
+		}
+	}
+
+	if data, err := os.ReadFile(filepath.Join(d, closedFile)); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			var n int
+			if _, err := fmt.Sscanf(strings.TrimSpace(line), "- %d", &n); err == nil {
+				bump(n)
+			}
+		}
+	}
+
 	return fmt.Sprintf("%03d", max+1)
 }
 
@@ -62,7 +89,7 @@ func entryFiles(d string) []string {
 	var out []string
 	for _, e := range entries {
 		n := e.Name()
-		if strings.HasSuffix(n, ".md") && n != "INDEX.md" && n != "CLOSED.md" {
+		if strings.HasSuffix(n, ".md") && n != "INDEX.md" && n != closedFile {
 			out = append(out, n)
 		}
 	}
@@ -70,7 +97,8 @@ func entryFiles(d string) []string {
 	return out
 }
 
-// List returns all open entries.
+// List returns every entry file present. Close removes the file it closes, so
+// what remains on disk is exactly the open set.
 func List(root string) ([]Entry, error) {
 	d := dir(root)
 	var out []Entry
@@ -104,7 +132,7 @@ func Close(root, id, reason string) error {
 		reason = "closed"
 	}
 	line := fmt.Sprintf("- %s — %s (%s)\n", m["id"], m["title"], reason)
-	f, err := os.OpenFile(filepath.Join(d, "CLOSED.md"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(filepath.Join(d, closedFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}

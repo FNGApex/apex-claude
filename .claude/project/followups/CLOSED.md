@@ -5,3 +5,4 @@
 - 003 — proj.StateDir creates dir on read paths (currently unused) (closed)
 - 004 — doctor root inference wrong for PATH-installed binary (CLAUDE_PLUGIN_ROOT covers plugin case) (closed)
 - 008 — doctor/install PATH check: handle symlinked bin dir (EvalSymlinks) and trailing-slash PATH entries — exact-match yields false positive/negative (closed)
+- 009 — Hook-matcher is_apex in install.sh + install-release.sh matches only 'apex hooks', not 'apex.exe hooks' (uninstall.sh matches both). A hook wired via Git-Bash on Windows (apex.exe) won't be de-duped on a subsequent Unix install re-run. Low risk; harmonize all three matchers. (install-release.sh matcher harmonized to apex(.exe) hooks; all five scripts agree)
