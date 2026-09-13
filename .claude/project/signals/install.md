@@ -1,36 +1,36 @@
 # install
 
 ## What it does
-Two idempotent bash scripts that deploy and remove Apex Claude as loose user-level artifacts in `~/.claude/` (not as a Claude Code plugin). `install.sh` is the primary deploy path; `make install` delegates to it.
+Three idempotent install paths deploy Apex Claude as loose user-level artifacts in `~/.claude/` (not as a Claude Code plugin), plus two matching uninstallers and two maintainer-facing publish scripts. Every install/uninstall path wires or strips the SessionStart hook in `~/.claude/settings.json` directly — no plugin enable/disable lifecycle — and is safe to re-run.
 
-The SessionStart hook is wired directly into `~/.claude/settings.json` via an embedded Python 3 snippet — no plugin enable/disable lifecycle. Each re-run strips prior Apex hook entries before re-inserting, so it is safe to run multiple times.
+## Install paths
+- **`scripts/install.sh`** (Unix, source build) — build → migrate → copy artifacts → install binary → wire hooks. `make install` delegates to it. Needs `go` + `make` + `python3` (python3 does the settings.json merge). Flags: `--release` (cross-compile matrix first), `--no-build` (install the existing `bin/apex`), `--help`.
+- **`scripts/install-release.sh`** (Linux/macOS, prebuilt) — downloads `apex-claude-<os>-<arch>.zip` from the resolved GitHub release, fetches and verifies `SHA256SUMS` **before** downloading the bundle, then copies artifacts/binary and wires hooks via the same python3 settings.json merge. Needs `curl` or `wget` + `python3`; no Go toolchain. Designed for `curl -fsSL .../install-release.sh | bash`.
+- **`scripts/install.ps1`** (Windows, prebuilt) — native PowerShell, runs on 5.1 and 7+, no external toolchain. Same SHA256SUMS-before-download flow (retries the SHA256SUMS fetch once on a transport error — PS 5.1 was found to reuse a server-closed pooled connection after a multi-MB download); hashes via .NET `SHA256` directly rather than `Get-FileHash` (which fails to resolve under 5.1 when a PowerShell 7 `PSModulePath` is inherited). Writes `settings.json` as UTF-8 **without** a BOM via `[System.IO.File]::WriteAllText` (5.1's `Set-Content -Encoding UTF8` prepends one, which breaks Go's `encoding/json` and so `apex doctor`/`internal/layout.ApexHooksWired`). Designed for `irm .../install.ps1 | iex`.
 
-## Files
-- `scripts/install.sh` — full deploy script (build → migrate → copy artifacts → install binary → wire hooks)
-- `scripts/uninstall.sh` — removal script (delete ax-* artifacts + apex.md + binary; strip apex hooks from settings.json)
-- `Makefile` targets `install` and `uninstall` — thin wrappers: `bash scripts/install.sh` / `bash scripts/uninstall.sh`
+All three: migrate away from a prior plugin install of `apex-claude@apex-claude` if `claude` CLI is present; copy `commands/ax-*.md`, `agents/ax-*.md`, `skills/ax-*/`, `output-styles/apex.md`; install the binary to `<config-dir>/bin/apex[.exe]`; strip any legacy Apex `PreToolUse` group from settings.json (never re-added — Apex ships no bash guard, Claude Code's own auto-mode owns that) and merge in a fresh `SessionStart` entry pointing at the installed binary. None of them touch `~/.claude/CLAUDE.md` — the Apex spine is opt-in.
 
-## install.sh flow
-1. **Build** (`make build`; skip with `--no-build`; optionally `make release` with `--release`)
-2. **Migrate** — if a prior plugin install of `apex-claude@apex-claude` is present, `claude plugin uninstall` it to avoid duplicate `/ax-*` and `/apex-claude:ax-*` commands
-3. **Copy artifacts** — `commands/ax-*.md` → `~/.claude/commands/`; `agents/ax-*.md` → `~/.claude/agents/`; `skills/ax-*/` → `~/.claude/skills/`; `output-styles/protocol.md` → `~/.claude/output-styles/apex.md`
-4. **Binary** — `bin/apex` → `~/.claude/bin/apex` (chmod +x)
-5. **Wire hooks** — Python 3 merges a SessionStart entry into `~/.claude/settings.json`, referencing `~/.claude/bin/apex`; any legacy Apex PreToolUse group is stripped (and the key removed when it empties); all other settings preserved
+## SHA256SUMS verification (prebuilt paths only)
+Both `install-release.sh` and `install.ps1` treat SHA256SUMS fetch outcomes identically: HTTP 404 = pre-checksum release → warn and install unverified; any other fetch failure → die; a fetched-but-asset-missing entry → die; a hash mismatch → die ("corrupt or tampered"). `install.sh` doesn't need this — it builds the binary locally from source. All three honor `APEX_UPDATE_BASE_URL` as `<base>/<version>/<asset>`, the same test seam `internal/update` uses, so a local server can stand in for GitHub.
 
-## uninstall.sh flow
-- Removes `~/.claude/commands/ax-*.md`, `~/.claude/agents/ax-*.md`, `~/.claude/skills/ax-*`, `~/.claude/output-styles/apex.md`, `~/.claude/bin/apex`
-- Strips apex hook entries from `~/.claude/settings.json` (Python 3); deletes empty hook sections; does not touch any other setting
-- Does NOT remove `~/.claude/CLAUDE.md` — the Apex spine is opt-in
+## Uninstall
+- `scripts/uninstall.sh` (Unix; also detects `apex.exe` under MINGW/MSYS/CYGWIN) / `scripts/uninstall.ps1` (Windows) — remove `commands/ax-*.md`, `agents/ax-*.md`, `skills/ax-*`, `output-styles/apex.md`, the installed binary; strip apex hook entries from settings.json (deletes empty hook sections); every other setting and non-Apex artifact untouched. `make uninstall` delegates to `uninstall.sh`.
+
+## Publish (maintainer-only, not end-user install)
+- `scripts/publish.sh` (Linux/macOS) / `scripts/publish.ps1` (Windows) — cross-compile the full release matrix, bundle each platform as `apex-claude-<os>-<arch>.zip`, write `dist/SHA256SUMS` in coreutils two-space format (`sha256sum`/`shasum -a 256` on Unix, `Get-FileHash` on Windows), and `gh release create`/`upload` the zips + SHA256SUMS + installer scripts. Both read the version from `internal/version/version.go`'s `const Version` and die if an explicit `--version`/`-Version` override disagrees with it (`v` + const is the only accepted form). Release notes embed both the Unix curl one-liner and the Windows irm one-liner.
 
 ## Install path vs. repo path
-The installed binary lives at `~/.claude/bin/apex`; the repo binary lives at `bin/apex`. Hook commands reference the installed path. After code changes, re-run `make install` to refresh the installed binary; the repo binary is updated by `make build`.
+The installed binary lives at `<config-dir>/bin/apex[.exe]` (default `~/.claude`); the repo binary lives at `bin/apex`. Hook commands reference the installed path. After code changes in this repo, re-run `make install` (or `apex update` against a published release) to refresh the installed binary; the repo binary is refreshed by `make build`.
 
 ## Prerequisites
-- `python3` on PATH (always required — used for settings.json merge)
-- `go` and `make` on PATH (required unless `--no-build`)
-- `claude` CLI on PATH only needed if migrating from a prior plugin install (step 2 is gated on `have claude`)
+- `install.sh`: `go`, `make`, `python3` (unless `--no-build`, which still needs an existing `bin/apex`)
+- `install-release.sh`: `curl` or `wget`, `python3`, `sha256sum` or `shasum` (skippable only if the release predates SHA256SUMS)
+- `install.ps1`: PowerShell 5.1+ only — no external toolchain
+- `claude` CLI on PATH only needed if migrating from a prior plugin install
 
 ## Coupling
-- install.sh copies artifact files from the plugin domain (commands/, agents/, skills/, output-styles/); any rename or addition in those directories requires a corresponding deploy via re-run of install.sh
-- The hook command is hardcoded to `~/.claude/bin/apex hooks session-start`; renaming backbone subcommands requires updating this script
-- `$CLAUDE_CONFIG_DIR` env var overrides the default `~/.claude` destination (useful for testing in alternate installs)
+- Install/update scripts copy artifact files from the plugin domain (commands/, agents/, skills/, output-styles/); any rename or addition in those directories requires a corresponding release/re-run to propagate.
+- The hook command is hardcoded (per script) to `<bin>/apex[.exe] hooks session-start`; renaming backbone subcommands requires updating all three install scripts, both uninstall scripts, and internal/layout's `isApexHookCmd` matcher in lockstep.
+- `internal/update.RepoSlug` ("FNGApex/apex-claude") must match `$Repo` in install.ps1 and `REPO` in install-release.sh — these are three independently-maintained copies of the same string.
+- `$CLAUDE_CONFIG_DIR` env var overrides the default `~/.claude` destination on every install/uninstall script (useful for testing in alternate installs); `APEX_VERSION`/`$env:APEX_VERSION` pins a release tag on the two prebuilt installers.
+- `internal/update.Apply`'s artifact-replace semantics must stay in lockstep with what all three install scripts do — a divergence means `apex update` and a fresh install produce different trees.

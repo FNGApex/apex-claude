@@ -1,11 +1,11 @@
 # plugin
 
 ## What it does
-Provides the Claude Code artifact surface for Apex: 10 agents, 6 skills, 21 commands, and one output style composing the full workflow lifecycle (plan/implement/ship/diagnose/docs/signals/help).
+Provides the Claude Code artifact surface for Apex: 10 agents, 7 skills, 23 commands, and one output style composing the full workflow lifecycle (plan/implement/ship/diagnose/docs/signals/handoff/resume/help).
 
-Installed as **loose user-level artifacts** into `~/.claude/` by `scripts/install.sh` (not as a Claude Code plugin). Commands appear as bare `/ax-*`. The `.claude-plugin/plugin.json` manifest is retained in the repo for reference but is not the active install vehicle.
+Installed as **loose user-level artifacts** into `~/.claude/` by any of three install scripts (see the install domain) — not as a Claude Code plugin. Commands appear as bare `/ax-*`. The `.claude-plugin/plugin.json` manifest (version `0.3.0`, kept in lockstep with `internal/version` by a test) is retained in the repo for reference but is not the active install vehicle.
 
-The SessionStart hook is wired into `~/.claude/settings.json` by `install.sh`; it invokes `~/.claude/bin/apex hooks session-start`. Apex ships no PreToolUse guard.
+The SessionStart hook is wired into `~/.claude/settings.json` by whichever install script ran (install.sh, install-release.sh, or install.ps1); it invokes `<config-dir>/bin/apex[.exe] hooks session-start`. Apex ships no PreToolUse guard.
 
 ## Artifacts
 - .claude-plugin/plugin.json — plugin manifest; declares name, version, description, defaultEnabled
@@ -25,6 +25,8 @@ The SessionStart hook is wired into `~/.claude/settings.json` by `install.sh`; i
 - commands/ax-pressure-test.md — pre-implementation gate; stress-tests a plan or spec for hidden assumptions and edge cases
 - commands/ax-implement.md — orchestrates implement→review subagent loop; reads approved spec; dispatches ax-builder; gates each iteration on ax-reviewer CONFIDENCE; commits per green iteration; syncs docs
 - commands/ax-diagnose.md — failure-driven work; dispatches ax-debug for hypothesis-driven root-cause then fix
+- commands/ax-handoff.md — capture a session handoff (graceful|urgent) at a stopping point; binary reports deterministic facts via `apex handoff scan`, model authors `.claude/project/handoff.md`
+- commands/ax-resume.md — consume a saved handoff; routes on `apex handoff status` exit code (0 fresh / 1 absent / 2 stale), reconciles against reality, archives on accept
 - commands/ax-autopilot.md — autonomous end-to-end: plan → implement loop → ship hands-off; one human decision (how to merge)
 - commands/ax-ship.md — review current diff, commit; dispatches ax-reviewer; gates commit on CONFIDENCE; uses ax-commit skill; does not push
 - commands/ax-push.md — ship family: commit + push to remote
@@ -47,6 +49,7 @@ The SessionStart hook is wired into `~/.claude/settings.json` by `install.sh`; i
 - skills/ax-review/SKILL.md — compressed code-review comments; one line per finding (location + problem); emits CONFIDENCE 0-100; flag-only, no fixes
 - skills/ax-documentation/SKILL.md — diff-driven documentation classifier; reads indexed doc surfaces; emits proposed edits; maintenance vs. bootstrap modes
 - skills/ax-explainer/SKILL.md — voice module for enduring human-facing narrative (README, docs/guides, CHANGELOG); inverts terse Apex style; dispatches ax-writer
+- skills/ax-handoff/SKILL.md — session continuity; auto-fires on scoped capture/resume phrases (explicit `/ax-handoff` and `/ax-resume` always work; bare "resume" does not auto-fire); binary owns the fact table + staleness verdict, model owns the narrative + reconciliation judgment
 - output-styles/protocol.md — "Protocol" output style; signal-first, drops filler phrases; hedging only when genuinely uncertain; tiers: lite/full/ultra
 - hooks/hooks.json — hook wiring reference; SessionStart only; retained for documentation but hooks are now wired via ~/.claude/settings.json by scripts/install.sh (not loaded from this file by the plugin system). `apex doctor` verifies the binary it references actually exists
 
@@ -54,10 +57,10 @@ The SessionStart hook is wired into `~/.claude/settings.json` by `install.sh`; i
 - Changing the ax-reviewer verdict format (`VERDICT: PASS` / `VERDICT: CHANGES_REQUESTED` / `CONFIDENCE: <N>`) breaks ax-ship, ax-implement, and ax-review-branch which parse those tokens.
 - Changing ax-commit skill trigger phrases or Conventional Commits format affects ax-ship, which delegates to ax-commit for the commit message.
 - Adding or renaming agents requires updating any command or skill that dispatches them by name (ax-ship dispatches ax-reviewer; ax-implement dispatches ax-builder + ax-reviewer; ax-autopilot dispatches ax-plan agent + ax-builder + ax-reviewer).
-- Adding hook events requires updating both `hooks/hooks.json` (reference) and `scripts/install.sh` (the Python snippet that writes to settings.json); the backbone binary must also handle the new event.
-- Changing plugin.json `name` or `defaultEnabled` no longer affects runtime behavior (plugin is not the install vehicle); these fields are reference only.
+- Adding hook events requires updating `hooks/hooks.json` (reference) and all three install scripts' settings.json merge logic (install.sh's Python snippet, install-release.sh's Python snippet, install.ps1's native merge) plus `internal/update.Apply`'s artifact list; the backbone binary must also handle the new event.
+- Changing plugin.json `name`, `version`, or `defaultEnabled` no longer affects runtime behavior (plugin is not the install vehicle) except `version`, which a test enforces must equal `internal/version.Version` and `marketplace.json`'s version.
 - ax-signals-inferrer dispatches ax-investigator per domain on large repos; renaming ax-investigator breaks that dispatch.
-- CLAUDE.md in this repo carries the full Apex spine (principles, lifecycle, registries); it is not auto-deployed by install.sh — users must opt in by copying the spine to their project's CLAUDE.md.
+- CLAUDE.md in this repo carries the full Apex spine (principles, lifecycle, registries); it is not auto-deployed by any install script — users must opt in by copying the spine to their project's CLAUDE.md.
 
 ## Conventions worth knowing
 - ax-reviewer finding format: `path:line: <emoji> severity: problem. fix.` where 🟥 = blocker, 🟧 = risk, 🟨 = nit, 🟦 = uncertain.
@@ -66,7 +69,7 @@ The SessionStart hook is wired into `~/.claude/settings.json` by `install.sh`; i
 - ax-commit allowed-tools are restricted to `Bash(git status*)`, `Bash(git diff*)`, `Bash(git log*)` — no file reads or writes.
 - ax-tdd skips are always explained inline: `skipped TDD because: <reason>`.
 - Protocol output style permits prose only for security warnings, irreversible-action confirmations, and non-obvious tradeoffs.
-- hooks.json is a reference document; the active hook wiring is in ~/.claude/settings.json, written by scripts/install.sh with the absolute path to ~/.claude/bin/apex.
+- hooks.json is a reference document; the active hook wiring is in `<config-dir>/settings.json`, written by whichever install script (or `apex update`, indirectly, since it never edits hooks) ran, with the full path to the installed binary.
 - ax-debug is opt-in only — dispatched when a test breaks or the orchestrator is stuck, not as routine implementation.
 - ax-plan keeps research in its own context to avoid polluting the orchestrator's cache.
 - ax-writer inverts the terse Apex output style; scope is enduring narrative docs only, not specs or signals.
