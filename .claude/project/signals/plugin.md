@@ -5,7 +5,7 @@ Provides the Claude Code artifact surface for Apex: 10 agents, 6 skills, 21 comm
 
 Installed as **loose user-level artifacts** into `~/.claude/` by `scripts/install.sh` (not as a Claude Code plugin). Commands appear as bare `/ax-*`. The `.claude-plugin/plugin.json` manifest is retained in the repo for reference but is not the active install vehicle.
 
-Hooks (PreToolUse(Bash) + SessionStart) are wired into `~/.claude/settings.json` by `install.sh`; they invoke `~/.claude/bin/apex hooks pre-bash` and `~/.claude/bin/apex hooks session-start`.
+The SessionStart hook is wired into `~/.claude/settings.json` by `install.sh`; it invokes `~/.claude/bin/apex hooks session-start`. Apex ships no PreToolUse guard.
 
 ## Artifacts
 - .claude-plugin/plugin.json — plugin manifest; declares name, version, description, defaultEnabled
@@ -48,7 +48,7 @@ Hooks (PreToolUse(Bash) + SessionStart) are wired into `~/.claude/settings.json`
 - skills/ax-documentation/SKILL.md — diff-driven documentation classifier; reads indexed doc surfaces; emits proposed edits; maintenance vs. bootstrap modes
 - skills/ax-explainer/SKILL.md — voice module for enduring human-facing narrative (README, docs/guides, CHANGELOG); inverts terse Apex style; dispatches ax-writer
 - output-styles/protocol.md — "Protocol" output style; signal-first, drops filler phrases; hedging only when genuinely uncertain; tiers: lite/full/ultra
-- hooks/hooks.json — hook wiring reference; PreToolUse(Bash) and SessionStart; retained for documentation but hooks are now wired via ~/.claude/settings.json by scripts/install.sh (not loaded from this file by the plugin system)
+- hooks/hooks.json — hook wiring reference; SessionStart only; retained for documentation but hooks are now wired via ~/.claude/settings.json by scripts/install.sh (not loaded from this file by the plugin system). `apex doctor` verifies the binary it references actually exists
 
 ## Coupling
 - Changing the ax-reviewer verdict format (`VERDICT: PASS` / `VERDICT: CHANGES_REQUESTED` / `CONFIDENCE: <N>`) breaks ax-ship, ax-implement, and ax-review-branch which parse those tokens.

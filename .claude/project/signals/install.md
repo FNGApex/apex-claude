@@ -3,7 +3,7 @@
 ## What it does
 Two idempotent bash scripts that deploy and remove Apex Claude as loose user-level artifacts in `~/.claude/` (not as a Claude Code plugin). `install.sh` is the primary deploy path; `make install` delegates to it.
 
-Hooks (PreToolUse + SessionStart) are wired directly into `~/.claude/settings.json` via an embedded Python 3 snippet — no plugin enable/disable lifecycle. Each re-run strips prior Apex hook entries before re-inserting, so it is safe to run multiple times.
+The SessionStart hook is wired directly into `~/.claude/settings.json` via an embedded Python 3 snippet — no plugin enable/disable lifecycle. Each re-run strips prior Apex hook entries before re-inserting, so it is safe to run multiple times.
 
 ## Files
 - `scripts/install.sh` — full deploy script (build → migrate → copy artifacts → install binary → wire hooks)
@@ -15,7 +15,7 @@ Hooks (PreToolUse + SessionStart) are wired directly into `~/.claude/settings.js
 2. **Migrate** — if a prior plugin install of `apex-claude@apex-claude` is present, `claude plugin uninstall` it to avoid duplicate `/ax-*` and `/apex-claude:ax-*` commands
 3. **Copy artifacts** — `commands/ax-*.md` → `~/.claude/commands/`; `agents/ax-*.md` → `~/.claude/agents/`; `skills/ax-*/` → `~/.claude/skills/`; `output-styles/protocol.md` → `~/.claude/output-styles/apex.md`
 4. **Binary** — `bin/apex` → `~/.claude/bin/apex` (chmod +x)
-5. **Wire hooks** — Python 3 merges PreToolUse(Bash) and SessionStart entries into `~/.claude/settings.json`, referencing `~/.claude/bin/apex`; all other settings preserved
+5. **Wire hooks** — Python 3 merges a SessionStart entry into `~/.claude/settings.json`, referencing `~/.claude/bin/apex`; any legacy Apex PreToolUse group is stripped (and the key removed when it empties); all other settings preserved
 
 ## uninstall.sh flow
 - Removes `~/.claude/commands/ax-*.md`, `~/.claude/agents/ax-*.md`, `~/.claude/skills/ax-*`, `~/.claude/output-styles/apex.md`, `~/.claude/bin/apex`
@@ -32,5 +32,5 @@ The installed binary lives at `~/.claude/bin/apex`; the repo binary lives at `bi
 
 ## Coupling
 - install.sh copies artifact files from the plugin domain (commands/, agents/, skills/, output-styles/); any rename or addition in those directories requires a corresponding deploy via re-run of install.sh
-- Hook commands are hardcoded to `~/.claude/bin/apex hooks pre-bash` / `~/.claude/bin/apex hooks session-start`; renaming backbone subcommands requires updating this script
+- The hook command is hardcoded to `~/.claude/bin/apex hooks session-start`; renaming backbone subcommands requires updating this script
 - `$CLAUDE_CONFIG_DIR` env var overrides the default `~/.claude` destination (useful for testing in alternate installs)

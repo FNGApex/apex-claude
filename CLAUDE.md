@@ -73,7 +73,7 @@ per dispatch; summons any subagent except ax-builder), `ax-writer` (opus, prose 
 `ax-documentation`, `ax-explainer`, `ax-handoff`.
 
 **Backbone** (`apex <cmd>`): `signals scan|show|stale`, `health show|set`, `followups`, `reminder`,
-`hooks pre-bash|session-start`, `doctor`, `validate`, `docs scan|stale`, `handoff scan|status|archive`.
+`hooks session-start`, `doctor`, `validate`, `docs scan|stale`, `handoff scan|status|archive`.
 Run `apex <cmd>` for usage.
 
 <apex-signals>

@@ -168,17 +168,21 @@ except json.JSONDecodeError as e:
 hooks = data.setdefault("hooks", {})
 
 def is_apex(group):
-    return any("apex hooks" in h.get("command", "") for h in group.get("hooks", []))
+    # Match both `apex hooks` (Unix) and `apex.exe hooks` (Windows) so re-runs
+    # on Windows strip the prior group instead of stacking a duplicate.
+    return any("apex hooks" in (c := h.get("command", "")) or "apex.exe hooks" in c
+               for h in group.get("hooks", []))
 
-# strip any prior apex groups so re-runs don't stack duplicates
+# Strip any prior apex groups so re-runs don't stack duplicates. PreToolUse is
+# stripped but never re-added: Apex no longer ships a bash guard (Claude Code's
+# own auto-mode owns that), so an upgrade from an older Apex must clean the
+# stale PreToolUse entry rather than leave it pointing at a removed subcommand.
 for event in ("PreToolUse", "SessionStart"):
     if event in hooks:
         hooks[event] = [g for g in hooks[event] if not is_apex(g)]
+        if not hooks[event]:
+            del hooks[event]
 
-hooks.setdefault("PreToolUse", []).append({
-    "matcher": "Bash",
-    "hooks": [{"type": "command", "command": f"{apex_bin} hooks pre-bash"}],
-})
 hooks.setdefault("SessionStart", []).append({
     "hooks": [{"type": "command", "command": f"{apex_bin} hooks session-start"}],
 })

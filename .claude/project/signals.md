@@ -4,7 +4,7 @@
 
 - Language: Go 1.26, module `apexclaude` (no external dependencies)
 - Install model: loose `~/.claude/` artifacts (commands, agents, skills, output-styles, binary) — NOT a Claude Code plugin; multiple install paths (see install domain)
-- Hooks wired via `~/.claude/settings.json` (PreToolUse + SessionStart) by install scripts using an embedded Python snippet; no plugin enable/disable lifecycle
+- Hooks wired via `~/.claude/settings.json` (SessionStart only) by install scripts using an embedded Python snippet; no plugin enable/disable lifecycle. Installers also STRIP any legacy Apex PreToolUse group (the removed bash guard) so upgrades don't leave a hook pointing at a gone subcommand
 - Binary: `bin/apex` (static, zero runtime deps); built with `make build`
 
 ## Build / test / lint
@@ -60,8 +60,8 @@ No deployment pipeline — release cross-compilation and GitHub Release publishi
 
 | Domain | Repo paths | One-liner | Detail |
 |--------|------------|-----------|--------|
-| backbone | cmd/apex/, internal/, go.mod, Makefile | Go CLI (`apex` v0.2.0): signals scan, health score, bash guard, session-start hook, doctor, followups, reminders, validate, docs gate | .claude/project/signals/backbone.md |
-| install | scripts/install.sh, scripts/install-release.sh, scripts/uninstall.sh, scripts/install.ps1, scripts/uninstall.ps1, scripts/publish.sh, scripts/publish.ps1 | Three install paths + two publish tools: (1) source build via install.sh/make (needs go+make+python3); (2) Unix prebuilt download via install-release.sh (needs curl/wget+python3); (3) Windows prebuilt via install.ps1 (PowerShell, no toolchain). publish.sh/publish.ps1 cross-compile, bundle, and upload GitHub Releases. All install paths wire PreToolUse+SessionStart hooks via embedded Python into ~/.claude/settings.json. | .claude/project/signals/install.md |
+| backbone | cmd/apex/, internal/, go.mod, Makefile | Go CLI (`apex` v0.2.0): signals scan, health score, session-start hook, handoff report, doctor, followups, reminders, validate, docs gate | .claude/project/signals/backbone.md |
+| install | scripts/install.sh, scripts/install-release.sh, scripts/uninstall.sh, scripts/install.ps1, scripts/uninstall.ps1, scripts/publish.sh, scripts/publish.ps1 | Three install paths + two publish tools: (1) source build via install.sh/make (needs go+make+python3); (2) Unix prebuilt download via install-release.sh (needs curl/wget+python3); (3) Windows prebuilt via install.ps1 (PowerShell, no toolchain). publish.sh/publish.ps1 cross-compile, bundle, and upload GitHub Releases. All install paths wire the SessionStart hook via embedded Python into ~/.claude/settings.json, stripping any legacy PreToolUse group. | .claude/project/signals/install.md |
 | plugin | .claude-plugin/, agents/, commands/, skills/, output-styles/, hooks/, CLAUDE.md | Claude Code artifact surface (`apex-claude` v0.2.0): 10 agents, 7 skills, 23 commands — full lifecycle roster (plan/implement/ship/diagnose/docs/signals/handoff/resume/help); hooks.json retained as reference but hooks now wired by install scripts into settings.json, not via plugin manifest | .claude/project/signals/plugin.md |
 
 ## Cross-cutting

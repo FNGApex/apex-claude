@@ -142,19 +142,22 @@ try {
   $hooks = $data.hooks
 
   $newGroups = @{
-    PreToolUse  = [pscustomobject]@{ matcher = 'Bash'; hooks = @([pscustomobject]@{ type = 'command'; command = "$cmdBin hooks pre-bash" }) }
     SessionStart = [pscustomobject]@{ hooks = @([pscustomobject]@{ type = 'command'; command = "$cmdBin hooks session-start" }) }
   }
 
+  # Strip any prior apex group so re-runs don't stack duplicates. PreToolUse is
+  # stripped but never re-added: Apex no longer ships a bash guard (Claude Code's
+  # own auto-mode owns that), so an upgrade from an older Apex must clean the
+  # stale PreToolUse entry rather than leave it pointing at a removed subcommand.
   foreach ($event in 'PreToolUse','SessionStart') {
-    # Strip any prior apex group so re-runs don't stack duplicates.
     $kept = @()
     if (Has-Prop $hooks $event) {
       $kept = @($hooks.$event | Where-Object { -not (Test-IsApex $_) })
     }
-    $merged = @($kept) + @($newGroups[$event])
+    $merged = @($kept)
+    if ($newGroups.ContainsKey($event)) { $merged = @($kept) + @($newGroups[$event]) }
     if (Has-Prop $hooks $event) { $hooks.$event = $merged }
-    else { $hooks | Add-Member -NotePropertyName $event -NotePropertyValue $merged }
+    elseif ($merged.Count -gt 0) { $hooks | Add-Member -NotePropertyName $event -NotePropertyValue $merged }
   }
 
   ($data | ConvertTo-Json -Depth 20) | Set-Content -Path $settingsPath -Encoding UTF8

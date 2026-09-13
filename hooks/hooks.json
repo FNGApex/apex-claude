@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/apex hooks pre-bash"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [

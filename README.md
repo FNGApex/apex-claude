@@ -21,7 +21,7 @@ reasoning.
 | `agents/ax-*.md` | Subagents | Locate, build, review, reason, plan, debug, write, run |
 | `skills/ax-*/SKILL.md` | Skills | Test-first, commit, verify, review, documentation, prose voice |
 | `commands/ax-*.md` | Slash commands | The lifecycle verbs, from setup through ship and improve |
-| `hooks/hooks.json` | Hooks | PreToolUse(Bash) guard and SessionStart context, wired to the binary |
+| `hooks/hooks.json` | Hooks | SessionStart context, wired to the binary |
 | `cmd/apex/` to `bin/apex` | Go CLI | The deterministic backbone |
 
 ## The lifecycle
@@ -92,25 +92,17 @@ apex signals scan|show|stale     # deterministic project map + staleness gate
 apex health show|set             # repo health/integrity score
 apex followups list|add|close|render|path
 apex reminder add|list|show|rm|due
-apex hooks pre-bash|session-start
+apex hooks session-start
 apex doctor                      # integrity check on the plugin layout + project state
 apex validate                    # lint artifacts and specs (exit 1 on issues)
 apex docs scan|stale             # documentation-surface cache and staleness gate
 apex version
 ```
 
-Test the Bash guard directly:
-
-```bash
-echo '{"tool_input":{"command":"rm -rf ~"}}' | bin/apex hooks pre-bash; echo "exit=$?"
-# exit=2 with a deny payload
-
-echo '{"tool_input":{"command":"go test ./..."}}' | bin/apex hooks pre-bash; echo "exit=$?"
-# exit=0, no output (allowed)
-```
-
-The deny list is deliberately narrow: `rm -rf` on root or home, force-pushing to main or master,
-and piping a remote script into a shell. Widen it as you learn which mistakes you actually make.
+Apex ships no Bash guard. Earlier versions wired a `PreToolUse` hook that pattern-matched
+destructive commands, but Claude Code's own auto-mode already arbitrates what runs, and a second
+regex layer underneath it bought false blocks rather than safety. Command permissions belong to the
+harness; the backbone sticks to scanning, gating, and state.
 
 > The compiled binary is gitignored. Run `make build` after cloning so the hook has something to
 > call, and ship per-platform binaries through `make release` plus GitHub Releases.
@@ -124,8 +116,9 @@ make install      # or: scripts/install.sh
 ```
 
 This builds the `apex` binary, copies the commands, agents, skills, and output style into
-`~/.claude/`, drops the binary at `~/.claude/bin/apex`, and wires the `SessionStart` and
-`PreToolUse` hooks into `~/.claude/settings.json` without disturbing any of your other settings.
+`~/.claude/`, drops the binary at `~/.claude/bin/apex`, and wires the `SessionStart` hook into
+`~/.claude/settings.json` without disturbing any of your other settings. Upgrading from a version
+that installed the `PreToolUse` guard? The installer strips that stale entry for you.
 Restart Claude Code afterward, then activate the voice with `/output-style Apex`.
 
 That source build needs a Go toolchain. On a Linux or macOS box without one, install from a
