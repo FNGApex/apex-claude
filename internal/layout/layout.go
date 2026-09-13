@@ -4,6 +4,7 @@
 package layout
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -76,6 +77,9 @@ func ApexHooksWired(root string) bool {
 			} `json:"hooks"`
 		} `json:"hooks"`
 	}
+	// Windows PowerShell 5.1 writes UTF-8 with a BOM, which encoding/json
+	// rejects outright; older install.ps1 runs left exactly that behind.
+	b = bytes.TrimPrefix(b, []byte("\xEF\xBB\xBF"))
 	if json.Unmarshal(b, &cfg) != nil {
 		return false
 	}
