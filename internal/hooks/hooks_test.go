@@ -35,6 +35,11 @@ func noSpawn(t *testing.T) *bool {
 
 // A missing signals file is code 1 (stale) — the nudge must surface it.
 func TestSessionStartSurfacesStaleSignals(t *testing.T) {
+	// Without this the real spawnCheck runs: os.Executable() is the test
+	// binary, so it re-execs hooks.test, which ignores the unknown args and
+	// re-runs this whole suite — forking exponentially until the machine is
+	// out of processes. Every test touching SessionStart must substitute it.
+	noSpawn(t)
 	root := t.TempDir()
 	t.Setenv("APEX_REPO", root)
 
@@ -50,6 +55,11 @@ func TestSessionStartSurfacesStaleSignals(t *testing.T) {
 // A signals file that can't be read is code 2 (error) — that must be surfaced
 // too, not swallowed. A directory at the file's path forces the read error.
 func TestSessionStartSurfacesSignalsError(t *testing.T) {
+	// Without this the real spawnCheck runs: os.Executable() is the test
+	// binary, so it re-execs hooks.test, which ignores the unknown args and
+	// re-runs this whole suite — forking exponentially until the machine is
+	// out of processes. Every test touching SessionStart must substitute it.
+	noSpawn(t)
 	root := t.TempDir()
 	t.Setenv("APEX_REPO", root)
 	if err := os.MkdirAll(filepath.Join(root, ".claude", "project", "deterministic-signals.md"), 0o755); err != nil {
