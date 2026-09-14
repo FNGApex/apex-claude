@@ -96,6 +96,21 @@ fi
 # --- 3. copy artifacts -------------------------------------------------------
 say "Installing artifacts into $CONFIG_DIR/"
 mkdir -p "$CONFIG_DIR"/{commands,agents,skills,output-styles,bin}
+# Prune ax-* artifacts this release no longer ships, so a command cut from Apex
+# disappears from the install instead of lingering in the slash menu. ax-* is
+# Apex's namespace (uninstall removes the whole prefix); other files are the
+# user's and are never touched. Skips a kind the source doesn't ship at all, so
+# a malformed bundle can never wipe the installed set.
+prune_unshipped() { # <src-dir> <dst-dir> <glob>
+  ls -d "$1"/$3 >/dev/null 2>&1 || return 0
+  for f in "$2"/$3; do
+    [ -e "$f" ] || continue
+    [ -e "$1/$(basename "$f")" ] || rm -rf "$f"
+  done
+}
+prune_unshipped "$REPO_ROOT/commands" "$CONFIG_DIR/commands" 'ax-*.md'
+prune_unshipped "$REPO_ROOT/agents"   "$CONFIG_DIR/agents"   'ax-*.md'
+prune_unshipped "$REPO_ROOT/skills"   "$CONFIG_DIR/skills"   'ax-*'
 cp commands/ax-*.md          "$CONFIG_DIR/commands/"
 cp agents/ax-*.md            "$CONFIG_DIR/agents/"
 cp output-styles/protocol.md "$CONFIG_DIR/output-styles/apex.md"

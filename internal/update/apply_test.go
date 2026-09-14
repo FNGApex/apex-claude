@@ -44,7 +44,8 @@ func newFixtureRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "commands", "ax-plan.md"), "old plan\n")
-	mustWriteFile(t, filepath.Join(root, "commands", "ax-keep.md"), "unrelated command\n")
+	mustWriteFile(t, filepath.Join(root, "commands", "my-command.md"), "unrelated command\n")
+	mustWriteFile(t, filepath.Join(root, "commands", "ax-retired.md"), "command a later release dropped\n")
 	mustWriteFile(t, filepath.Join(root, "agents", "ax-builder.md"), "old builder\n")
 	mustWriteFile(t, filepath.Join(root, "output-styles", "apex.md"), "old style\n")
 	mustWriteFile(t, filepath.Join(root, "skills", "ax-tdd", "SKILL.md"), "old skill\n")
@@ -186,8 +187,12 @@ func TestApplyHappyPathReplacesArtifactsAndBinary(t *testing.T) {
 	assertFileContent(t, filepath.Join(root, "commands", "ax-plan.md"), "new plan\n")
 	assertFileContent(t, filepath.Join(root, "agents", "ax-builder.md"), "new builder\n")
 	assertFileContent(t, filepath.Join(root, "output-styles", "apex.md"), "new style\n")
-	// Unrelated command left alone.
-	assertFileContent(t, filepath.Join(root, "commands", "ax-keep.md"), "unrelated command\n")
+	// A user's own (non-ax-) command is left alone...
+	assertFileContent(t, filepath.Join(root, "commands", "my-command.md"), "unrelated command\n")
+	// ...but an Apex command the new release no longer ships is pruned.
+	if _, err := os.Stat(filepath.Join(root, "commands", "ax-retired.md")); !os.IsNotExist(err) {
+		t.Errorf("ax-retired.md should be pruned: the bundle no longer ships it (stat err = %v)", err)
+	}
 
 	// Skills wholesale-replaced: stale.txt gone, SKILL.md fresh.
 	assertFileContent(t, filepath.Join(root, "skills", "ax-tdd", "SKILL.md"), "new skill\n")
@@ -513,5 +518,79 @@ func TestSwapBinaryUnixCleansStagedFileOnRenameFailure(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "bin", ".apex.new")); !os.IsNotExist(err) {
 		t.Error("staged .apex.new must be removed when the rename fails")
+	}
+}
+
+// A release that drops a command, agent or skill must remove it from the
+// install on update. Overwrite-only semantics left every cut ax-* artifact on
+// disk forever, still listed in Claude Code's slash menu. ax-* is Apex's
+// namespace (uninstall already deletes the whole prefix); anything else in
+// those directories belongs to the user and must survive.
+func TestApplyArtifactsPrunesDroppedApexArtifacts(t *testing.T) {
+	extract, root := t.TempDir(), t.TempDir()
+	write := func(base, rel, body string) {
+		t.Helper()
+		p := filepath.Join(base, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// New bundle: one command, one agent, one skill.
+	write(extract, "commands/ax-keep.md", "new")
+	write(extract, "agents/ax-keep.md", "new")
+	write(extract, "skills/ax-keep/SKILL.md", "new")
+	write(extract, "output-styles/apex.md", "new")
+	// Existing install: the kept artifacts (old), dropped ones, and user files.
+	write(root, "commands/ax-keep.md", "old")
+	write(root, "commands/ax-dropped.md", "old")
+	write(root, "commands/my-own.md", "user")
+	write(root, "agents/ax-keep.md", "old")
+	write(root, "agents/ax-dropped.md", "old")
+	write(root, "agents/my-agent.md", "user")
+	write(root, "skills/ax-keep/SKILL.md", "old")
+	write(root, "skills/ax-dropped/SKILL.md", "old")
+	write(root, "skills/my-skill/SKILL.md", "user")
+
+	if err := applyArtifacts(extract, root); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, rel := range []string{"commands/ax-dropped.md", "agents/ax-dropped.md", "skills/ax-dropped"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Errorf("%s should have been pruned", rel)
+		}
+	}
+	for rel, want := range map[string]string{
+		"commands/ax-keep.md": "new", "agents/ax-keep.md": "new", "skills/ax-keep/SKILL.md": "new",
+		"commands/my-own.md": "user", "agents/my-agent.md": "user", "skills/my-skill/SKILL.md": "user",
+	} {
+		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil || string(b) != want {
+			t.Errorf("%s = %q (err %v), want %q", rel, b, err, want)
+		}
+	}
+}
+
+// A bundle missing a whole artifact directory is malformed, not a release that
+// deleted everything. Pruning keys on what the bundle ships, so an absent or
+// empty directory must never wipe the installed set.
+func TestApplyArtifactsDoesNotPruneWhenBundleLacksDirectory(t *testing.T) {
+	extract, root := t.TempDir(), t.TempDir()
+	os.MkdirAll(filepath.Join(extract, "agents"), 0o755) // present but empty
+	for _, rel := range []string{"commands/ax-a.md", "agents/ax-b.md", "skills/ax-c/SKILL.md"} {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte("old"), 0o644)
+	}
+	if err := applyArtifacts(extract, root); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"commands/ax-a.md", "agents/ax-b.md", "skills/ax-c/SKILL.md"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("%s was removed by a bundle that shipped no replacement set", rel)
+		}
 	}
 }

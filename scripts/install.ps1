@@ -148,6 +148,22 @@ try {
   foreach ($sub in 'commands','agents','skills','output-styles','bin') {
     New-Item -ItemType Directory -Path (Join-Path $ConfigDir $sub) -Force | Out-Null
   }
+  # Prune ax-* artifacts this release no longer ships, so a command cut from
+  # Apex disappears instead of lingering in the slash menu. ax-* is Apex's
+  # namespace (uninstall removes the whole prefix); other files are the user's.
+  # A kind the bundle doesn't ship at all is skipped, so a malformed bundle
+  # can never wipe the installed set.
+  function Remove-Unshipped($srcDir, $dstDir, $filter) {
+    $shipped = @(Get-ChildItem -Path $srcDir -Filter $filter -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+    if ($shipped.Count -eq 0) { return }
+    Get-ChildItem -Path $dstDir -Filter $filter -ErrorAction SilentlyContinue |
+      Where-Object { $shipped -notcontains $_.Name } |
+      ForEach-Object { Remove-Item $_.FullName -Recurse -Force }
+  }
+  Remove-Unshipped (Join-Path $src 'commands') (Join-Path $ConfigDir 'commands') 'ax-*.md'
+  Remove-Unshipped (Join-Path $src 'agents')   (Join-Path $ConfigDir 'agents')   'ax-*.md'
+  Remove-Unshipped (Join-Path $src 'skills')   (Join-Path $ConfigDir 'skills')   'ax-*'
+
   Copy-Item (Join-Path $src 'commands/ax-*.md') (Join-Path $ConfigDir 'commands') -Force
   Copy-Item (Join-Path $src 'agents/ax-*.md')   (Join-Path $ConfigDir 'agents')   -Force
   Copy-Item (Join-Path $src 'output-styles/apex.md') (Join-Path $ConfigDir 'output-styles/apex.md') -Force

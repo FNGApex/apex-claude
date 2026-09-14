@@ -298,13 +298,23 @@ func extractZipEntry(f *zip.File, targetAbs string) error {
 
 // --- apply artifacts (installer semantics) -------------------------------
 
-// applyArtifacts copies the extracted bundle into root with the same
-// replace semantics install.ps1 uses: overwrite commands/ax-*.md,
-// agents/ax-*.md, and output-styles/apex.md; wholesale-replace each
-// skills/ax-* dir (delete then copy).
+// applyArtifacts copies the extracted bundle into root with the installers'
+// replace semantics: overwrite commands/ax-*.md, agents/ax-*.md and
+// output-styles/apex.md; wholesale-replace each skills/ax-* dir.
+//
+// It then prunes ax-* artifacts the bundle no longer ships, so a release that
+// cuts a command actually removes it from every updated install. ax-* is
+// Apex's namespace — uninstall already deletes the whole prefix — so files
+// without it are the user's and are never touched. Pruning is keyed on what
+// the bundle ships: a directory the bundle leaves absent or empty is treated
+// as malformed, not as "delete everything".
 func applyArtifacts(extractDir, root string) error {
 	for _, sub := range []string{"commands", "agents"} {
-		if err := overwriteGlob(extractDir, root, sub, "ax-*.md"); err != nil {
+		shipped, err := overwriteGlob(extractDir, root, sub, "ax-*.md")
+		if err != nil {
+			return err
+		}
+		if err := pruneUnshipped(filepath.Join(root, sub), "ax-*.md", shipped); err != nil {
 			return err
 		}
 	}
@@ -326,10 +336,12 @@ func applyArtifacts(extractDir, root string) error {
 		}
 		return err
 	}
+	shipped := map[string]bool{}
 	for _, e := range entries {
 		if !e.IsDir() || !strings.HasPrefix(e.Name(), "ax-") {
 			continue
 		}
+		shipped[e.Name()] = true
 		dst := filepath.Join(root, "skills", e.Name())
 		if err := os.RemoveAll(dst); err != nil {
 			return err
@@ -338,17 +350,42 @@ func applyArtifacts(extractDir, root string) error {
 			return err
 		}
 	}
-	return nil
+	return pruneUnshipped(filepath.Join(root, "skills"), "ax-*", shipped)
 }
 
-func overwriteGlob(extractDir, root, sub, pattern string) error {
+// overwriteGlob copies every extractDir/sub/pattern match into root/sub and
+// returns the set of base names it shipped.
+func overwriteGlob(extractDir, root, sub, pattern string) (map[string]bool, error) {
 	matches, err := filepath.Glob(filepath.Join(extractDir, sub, pattern))
+	if err != nil {
+		return nil, err
+	}
+	shipped := map[string]bool{}
+	for _, m := range matches {
+		name := filepath.Base(m)
+		if err := copyFile(m, filepath.Join(root, sub, name), 0o644); err != nil {
+			return nil, err
+		}
+		shipped[name] = true
+	}
+	return shipped, nil
+}
+
+// pruneUnshipped removes dir/pattern entries whose names are not in shipped.
+// An empty shipped set prunes nothing (see applyArtifacts).
+func pruneUnshipped(dir, pattern string, shipped map[string]bool) error {
+	if len(shipped) == 0 {
+		return nil
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, pattern))
 	if err != nil {
 		return err
 	}
 	for _, m := range matches {
-		dst := filepath.Join(root, sub, filepath.Base(m))
-		if err := copyFile(m, dst, 0o644); err != nil {
+		if shipped[filepath.Base(m)] {
+			continue
+		}
+		if err := os.RemoveAll(m); err != nil {
 			return err
 		}
 	}
