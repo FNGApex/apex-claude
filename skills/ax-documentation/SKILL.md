@@ -11,7 +11,7 @@ allowed-tools: Bash(git diff*), Bash(git status*), Read, Grep, Glob, Edit, Write
 
 <trigger>
 "doc this change", "doc impact", "what needs documenting", /ax-documentation; invoked by ship
-verbs (maintenance) and the documentation command (authoring).
+verbs (maintenance); explicit `/ax-documentation` runs authoring.
 </trigger>
 
 ## Scope

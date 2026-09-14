@@ -4,7 +4,7 @@ description: >
   Lightweight background runner for polling, status checks, log scraping, and structured
   extraction — work that needs no Sonnet judgment. Dispatched with a self-contained brief: the
   caller embeds full instructions in the prompt. Read-only by default; the brief sets scope.
-  Use for CI watch, deploy watch, log tail, simple file lookups. Backs /ax-watch-ci.
+  Use for CI watch, deploy watch, log tail, simple file lookups.
 tools: Read, Grep, Glob, Bash
 model: haiku
 ---

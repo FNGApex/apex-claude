@@ -38,9 +38,12 @@ The binary owns determinism; the model owns judgment.
 1. **Plan** — `/ax-plan` (design doc + checkpoint spec; trivial → inline spec). Gates: `/ax-pressure-test`.
 2. **Implement** — `/ax-implement` runs the implement→review loop, commits per green iteration.
    `/ax-diagnose` for failure-driven work.
-3. **Ship** — pick from the ship family: `/ax-ship` `/ax-push` `/ax-pr` `/ax-merge` `/ax-squash`.
-4. **Sync docs** — `/ax-documentation`. Ship verbs run maintenance mode automatically.
-5. **Improve** — `/ax-improve` retrospective. `/ax-help` routes when lost.
+3. **Ship** — `/ax-ship [--push]` (review + commit), `/ax-pr` (push + PR), `/ax-merge [--squash]` (land on base).
+4. **Sync docs** — `ax-documentation` skill (`/ax-documentation` for authoring). Ship verbs run maintenance mode automatically.
+5. **Improve** — `/ax-improve` retrospective.
+
+**Housekeeping:** `/ax-follow-up [review | remind <when> <what>]`, `/ax-refresh-signals` (first run
+bootstraps the repo), `/ax-git-cleanup`.
 
 **Session continuity:** `/ax-handoff [graceful|urgent]` captures a handoff at a stopping point;
 `/ax-resume` consumes one (routes on `apex handoff status` — fresh/stale/absent). Binary scans the

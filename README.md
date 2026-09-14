@@ -34,12 +34,22 @@ The commands follow one loop. Each verb is small and self-describing in the slas
 2. **Implement.** `/ax-implement` runs the implement and review loop: it briefs a fresh-context
    builder, gates each iteration on the reviewer's confidence score, and commits per green pass.
    `/ax-diagnose` covers failure-driven work, starting from a broken test or a symptom.
-3. **Ship.** Pick the verb that matches how far you want to go: `/ax-ship`, `/ax-push`,
-   `/ax-pr`, `/ax-merge`, or `/ax-squash`.
-4. **Sync docs.** `/ax-documentation` keeps the human-facing surfaces current. Ship verbs run
-   its maintenance mode automatically.
+3. **Ship.** Pick the verb that matches how far you want to go. `/ax-ship` reviews the change and
+   commits it, and `--push` sends it to the remote as well. `/ax-pr` pushes the branch and opens a
+   pull request. `/ax-merge` lands the branch on base, and `--squash` collapses it into a single
+   commit on the way. Branch-landing verbs run the reviewer first if the work never went through
+   `/ax-ship`.
+4. **Sync docs.** The `ax-documentation` skill keeps the human-facing surfaces current. Ship verbs
+   run its maintenance mode automatically; invoke `/ax-documentation` directly for a full pass.
 5. **Improve.** `/ax-improve` mines a session for friction and turns it into concrete fixes.
-   `/ax-help` routes you to the right verb when you are unsure.
+
+A few housekeeping verbs sit outside the loop. `/ax-follow-up` works the ledger of loose ends and
+files reminders that surface at the next session start. `/ax-refresh-signals` regenerates the
+project map, and on its first run in a new repo it also proposes the `.gitignore` entries and
+`docs/` folders Apex expects. `/ax-git-cleanup` finds stale branches and worktrees and removes the
+ones you confirm. Everything else you might reach for — reviewing a branch, watching CI, opening an
+issue, scheduling a timed reminder — is already covered by Claude Code itself (`/code-review`,
+`/loop`, `/schedule`) or by simply asking.
 
 `/ax-autopilot` runs the whole loop hands-off, with one human decision: how to merge.
 

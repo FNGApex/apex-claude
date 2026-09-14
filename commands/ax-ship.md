@@ -1,5 +1,6 @@
 ---
-description: Review the current diff, then commit it. Dispatches ax-reviewer; gates the commit on its CONFIDENCE; uses the ax-commit skill for the message. Does not push.
+description: Review the current diff, then commit it. Dispatches ax-reviewer; gates the commit on its CONFIDENCE; uses the ax-commit skill for the message. --push also pushes after the commit.
+argument-hint: [--push]
 ---
 
 <ship-flow>
@@ -18,11 +19,14 @@ Run the change through review before it lands.
 4. **Stage + message.** Stage the intended files by path (`git add <path>`). Invoke the
    `ax-commit` skill to generate the message from the staged diff.
 
-5. **Commit.** Commit with that message. Report the resulting commit hash. Do not push.
+5. **Commit.** Commit with that message. Report the resulting commit hash.
 6. **Health.** Record the review outcome via `apex health set` from the aggregated CONFIDENCE.
+7. **Push (`--push` only).** `git push` (`-u` if the branch has no upstream). On the base branch,
+   confirm first unless the user has already said to push base. Report the remote ref.
 </ship-flow>
 
 <safety>
 - Never commit secrets — if review flags any, abort regardless of confidence.
 - Never `git add -A` blindly; stage only files relevant to this change.
+- Pushing publishes to the remote; it may be cached or indexed.
 </safety>

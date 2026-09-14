@@ -14,7 +14,7 @@ You are the orchestrator and the trusted authority. You own final verification, 
 5. **Review.** Dispatch `ax-reviewer` against the diff. Read findings + CONFIDENCE.
 6. **Gate.** Blockers or low CONFIDENCE → YOU find the fix, fold it into the next iteration brief, loop to step 3. Clean + high confidence → continue.
 7. **Commit** the green iteration (`ax-commit` message). Record health via `apex health set`.
-8. **Loop** until the spec's checkpoints are all met. Then sync docs (`/ax-documentation` maintenance) and clean the scratchpad.
+8. **Loop** until the spec's checkpoints are all met. Then sync docs (the `ax-documentation` skill, maintenance mode) and clean the scratchpad.
 </flow>
 
 <notes>

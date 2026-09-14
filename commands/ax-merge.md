@@ -1,16 +1,20 @@
 ---
-description: Merge the current branch into base. No squash. Re-runs tests on the merged tip. Detects worktree provenance and prompts to delete. Prefers gh pr merge when a PR is open.
+description: Land the current branch on base. Default merge commit (--no-ff); --squash collapses the branch into one commit. Reviews an unreviewed branch first, re-runs tests on the landed tip, prefers gh when a PR is open, offers to remove the worktree.
+argument-hint: [--squash]
 ---
 
 <flow>
 1. **Pre-flight.** Working tree clean (commit or stash first). Identify base (main/master).
-2. **Open PR?** If `gh pr view` finds an open PR for this branch, prefer `gh pr merge --merge` so GitHub closes it cleanly. Else local merge.
-3. **Local merge.** `git checkout <base>`, `git merge --no-ff <branch>`.
-4. **Verify merged tip.** Re-run the suite (`make test` / project test command). On failure, stop and report — do not push a broken merge.
-5. **Worktree provenance.** If the branch lived in `.worktrees/<branch>/`, prompt to remove it.
-6. **Report.** Merge commit + test result. Push only if the user asks.
+2. **Review gate.** If the branch's commits haven't been through `/ax-ship` review, dispatch `ax-reviewer` on `git diff <base>...HEAD`. Any 🟥 or low CONFIDENCE → stop and surface; don't land.
+3. **Open PR?** If `gh pr view` finds one, land through GitHub: `gh pr merge --merge` (or `--squash`). Else local.
+4. **Local land.**
+   - default: `git checkout <base>` → `git merge --no-ff <branch>`.
+   - `--squash`: confirm the user wants the branch history collapsed, then `git checkout <base>` → `git merge --squash <branch>` → `ax-commit` synthesizes one message for the whole branch → commit.
+5. **Verify the landed tip.** Re-run the project test suite. On failure stop and report — never push a broken base.
+6. **Worktree.** If the branch lived in `.worktrees/<branch>/`, offer to remove it.
+7. **Report.** Resulting commit + test result. Push only if the user asks.
 </flow>
 
 <safety>
-Merging into base is hard to reverse for collaborators. Use `git revert` for rollback, never force-push base. Confirm before merging if tests did not pass.
+Landing on base is hard to reverse for collaborators. Roll back with `git revert`, never force-push base.
 </safety>
