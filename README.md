@@ -186,7 +186,8 @@ Coming from `v0.2.0`? That release predates `apex update` and has no checksums, 
 itself. Re-run the one-line installer for your platform once to move to the current release; every
 update after that goes through `apex update`. The same holds for an install done through the
 `.claude-plugin/` marketplace route — `apex update` refuses to touch a plugin directory, so plugin
-installs keep upgrading through `claude plugin update`.
+installs keep upgrading through `claude plugin update`. [`CHANGELOG.md`](CHANGELOG.md) lists everything that changed in
+each release, including the commands that were removed and what replaced them.
 
 Apex installs as loose files rather than as a Claude Code plugin on purpose. Plugin commands are
 namespaced by the harness, so a plugin install surfaces them as `/apex-claude:ax-plan`; loose

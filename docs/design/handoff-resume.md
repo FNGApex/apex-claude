@@ -1,5 +1,7 @@
 # Design — handoff / resume
 
+> **Status:** implemented, then partly superseded on 2026-09-12: the binary no longer renders or writes the handoff document — `apex handoff scan` is a read-only fact report and the model writes `handoff.md`. This is the decision record as written; for current behavior read `docs/spec/handoff-resume.md` and its change log.
+
 Session continuity for Apex: capture enough state at a stopping point that a fresh-context
 session can pick the work back up. Binary owns the deterministic scan + staleness verdict;
 skills and commands compose the narrative on top. Respects the determinism boundary.

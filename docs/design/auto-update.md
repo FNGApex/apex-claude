@@ -1,5 +1,7 @@
 # Auto-update — design
 
+> **Status:** implemented and shipping in v0.3.0. This is the decision record as written on 2026-07-01 — version numbers, file locations and the installer description below reflect the tree at that time. For current behavior read `docs/spec/auto-update.md`, whose change log lists every later supersession (checksum verification in both installers, artifact pruning, Windows PowerShell 5.1 compatibility).
+
 Goal: an installed (loose) copy of Apex Claude detects new GitHub Releases and can pull them —
 binary AND markdown artifacts in lockstep — with zero LLM involvement, zero new Go dependencies,
 and zero risk of blocking a Claude Code session.
