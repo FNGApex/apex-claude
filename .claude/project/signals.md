@@ -60,7 +60,7 @@ Both prebuilt publish scripts (`scripts/publish.sh`, `scripts/publish.ps1`) read
 
 ## DevOps & CI
 
-CI: GitHub Actions (`.github/workflows/ci.yml`), triggers on push to `main`/`master` and all pull requests. Matrix: `ubuntu-latest`, `windows-latest`, `macos-latest` — added so the Windows-only auto-update binary-swap/rollback path and the darwin release artifacts actually get exercised (a Ubuntu-only CI never ran either).
+CI: GitHub Actions (`.github/workflows/ci.yml`), triggers ONLY on release-candidate tags (`v*-rc*`, e.g. `v0.3.0-rc.1`) plus manual `workflow_dispatch` — pushes to `master` and pull requests run nothing. Release flow: tag `vX.Y.Z-rc.N` → CI green on all three OSes → publish `vX.Y.Z`. Matrix: `ubuntu-latest`, `windows-latest`, `macos-latest` — added so the Windows-only auto-update binary-swap/rollback path and the darwin release artifacts actually get exercised (a Ubuntu-only CI never ran either).
 Gate order per OS: `go vet ./...` → `go test ./...` → `go build -trimpath -ldflags "-s -w" -o bin/apex[.exe] ./cmd/apex` → `./bin/apex doctor` → `./bin/apex validate all`. `gofmt` runs Linux-only (a Windows checkout converts line endings to CRLF, which gofmt would flag on every file even when unmodified). Build uses `go build` directly, not `make`, because `make` is not guaranteed present on Windows runners.
 No deployment pipeline — release cross-compilation and GitHub Release publishing handled locally via `scripts/publish.sh` (Linux/macOS) or `scripts/publish.ps1` (Windows), each of which also writes `SHA256SUMS`. End-user install/update is one of three install paths (see above) plus `apex update` for in-place upgrades; none of this is CI-driven.
 

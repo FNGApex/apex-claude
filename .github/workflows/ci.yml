@@ -1,9 +1,13 @@
 name: ci
 
+# CI runs on release candidates only: push a tag like v0.3.0-rc.1 before
+# publishing v0.3.0. Ordinary pushes and pull requests do not trigger it, which
+# keeps the 3-OS matrix (macOS is the costly job on a private repo) off every
+# commit. "Run workflow" on the Actions tab runs it on demand for any ref.
 on:
   push:
-    branches: [main, master]
-  pull_request:
+    tags: ['v*-rc*']
+  workflow_dispatch:
 
 permissions:
   contents: read

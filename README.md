@@ -162,7 +162,10 @@ mirrored publish tools — `scripts/publish.sh` from Linux or macOS, `scripts/pu
 Windows. Both cross-compile the same matrix, zip the binary together with the artifacts per
 platform, write a `SHA256SUMS` file covering every bundle, and upload the bundles, the checksums,
 and both one-line installers to a GitHub Release via `gh`, so whichever platform the maintainer
-ships from, all three install paths stay in sync.
+ships from, all three install paths stay in sync. Before publishing, push a release-candidate tag such as
+`v0.3.0-rc.1`: that is what runs CI, on Linux, Windows and macOS. Ordinary pushes and pull requests
+don't run it, so a green release-candidate run is the check that a release is safe to cut. The Actions
+tab's "Run workflow" button runs the same checks on demand.
 
 Both prebuilt installers verify what they download. Each one fetches the release's `SHA256SUMS`
 first and refuses to install a bundle whose hash does not match, or one the file does not list at
