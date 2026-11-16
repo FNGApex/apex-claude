@@ -1,0 +1,5 @@
+{
+  "name": "apex",
+  "owner": { "name": "FNGApex" },
+  "plugins": [{ "name": "token-spend", "source": "./token-spend" }]
+}

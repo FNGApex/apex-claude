@@ -1,0 +1,1 @@
+{ "name": "token-spend", "version": "0.1.0", "description": "Tracks token and dollar spend per session; /spend shows the total since install" }

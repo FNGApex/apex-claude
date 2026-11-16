@@ -13,8 +13,8 @@ Requires Go 1.26+ and the ponytail plugin
 
 ```sh
 git clone git@github.com:FNGApex/apex-claude.git && cd apex-claude
-make install      # apex -> ~/.local/bin; skills and the Apex output style -> ${CLAUDE_CONFIG_DIR:-~/.claude}
-make uninstall    # removes all three
+make install      # apex -> ~/.local/bin; skills, the Apex output style and mods -> ${CLAUDE_CONFIG_DIR:-~/.claude}
+make uninstall    # removes all four
 ```
 
 On Windows, without `make` (PowerShell 5.1 or 7+; `PREFIX` defaults to `%USERPROFILE%\.local\bin`):
@@ -31,6 +31,14 @@ install first with `example/scripts/uninstall.sh` (or `example/scripts/uninstall
 runs Bash in; every skill calls a bare `apex`. The skills install as user skills, not as a plugin, so they keep bare
 names (`/apex-init`, `/sign-off`); plugin skills are always prefixed with the plugin name. Restart Claude Code after
 installing. The output style is optional: pick it with `/output-style Apex`.
+
+Mods are Claude Code plugins in `mods/`, installed with the `claude` CLI as `<mod>@apex` from the `apex` marketplace.
+They load in place from this clone, so keep it where it is; an edit there applies at the next session or
+`/reload-plugins`. `make install` stops if a mod of the same name is installed from another marketplace.
+
+| Mod | Does |
+|---|---|
+| `token-spend` | `/spend`: token and dollar spend since install, in total and this session, by model and by source |
 
 Then adopt the protocol in a repo with one session that runs `/apex-init`.
 

@@ -14,6 +14,8 @@ function Get-ApexInstallConfig {
     LegacyBin = Join-Path $ConfigDir 'bin\apex.exe'
     Mark      = '.apex-installed'
     Skills    = @('agent-protocol', 'git-discipline', 'sign-off', 'apex-init', 'pr-review')
+    # Plugins read live from mods/ (the apex marketplace); the @apex id is the ownership mark.
+    Mods      = @('token-spend')
   }
 }
 

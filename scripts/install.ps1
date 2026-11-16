@@ -38,6 +38,9 @@ foreach ($s in $cfg.Skills) {
   if ((Test-Path $d) -and -not (Test-Path (Join-Path $d $cfg.Mark))) { Fail "$d exists and was not installed by apex; move it first" }
 }
 if ((Test-Path $cfg.Style) -and -not (Test-ApexStyle $cfg.Style)) { Fail "$($cfg.Style) exists and was not installed by apex; move it first" }
+foreach ($m in $cfg.Mods) {
+  if (Select-String -Path $plugins -Pattern "`"$m@(?!apex`")" -Quiet) { Fail "another $m plugin is installed; uninstall it first: claude plugin uninstall <$m@marketplace>" }
+}
 
 # build
 Push-Location $repo
@@ -56,7 +59,13 @@ foreach ($s in $cfg.Skills) {
   Copy-Item (Join-Path $repo "skills/$s") $d -Recurse
   New-Item -ItemType File (Join-Path $d $cfg.Mark) | Out-Null
 }
+& claude plugin marketplace add (Join-Path $repo 'mods')
+if ($LASTEXITCODE -ne 0) { Fail "claude plugin marketplace add failed ($LASTEXITCODE)" }
+foreach ($m in $cfg.Mods) {
+  & claude plugin install "$m@apex"
+  if ($LASTEXITCODE -ne 0) { Fail "claude plugin install $m@apex failed ($LASTEXITCODE)" }
+}
 
 $onPath = ($env:PATH -split ';') | Where-Object { $_ -and ($_.TrimEnd('\','/') -ieq $cfg.Prefix.TrimEnd('\','/')) }
 if (-not $onPath) { Write-Warning "$($cfg.Prefix) is not on PATH; every skill calls a bare apex" }
-Write-Host "[ok] apex -> $($cfg.Prefix); skills and output style -> $($cfg.ConfigDir). Restart Claude Code." -ForegroundColor Green
+Write-Host "[ok] apex -> $($cfg.Prefix); skills, output style and mods -> $($cfg.ConfigDir). Restart Claude Code." -ForegroundColor Green

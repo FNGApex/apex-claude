@@ -6,6 +6,8 @@ MARK := .apex-installed
 # The output style is one file, so its own frontmatter name is the ownership mark.
 STYLE = $(CLAUDE_DIR)/output-styles/apex.md
 STYLE_MARK := ^name: Apex$$
+# Mods install as plugins read live from mods/ (the apex marketplace); the @apex id is the ownership mark.
+MODS := token-spend
 
 .PHONY: build install uninstall check test
 
@@ -19,12 +21,16 @@ install: check build
 	cp output-styles/apex.md "$(STYLE)"
 	for s in $(SKILLS); do d="$(CLAUDE_DIR)/skills/$$s"; \
 	  rm -rf "$$d" && cp -R "skills/$$s" "$$d" && touch "$$d/$(MARK)" || exit 1; done
+	claude plugin marketplace add "$(CURDIR)/mods"
+	for m in $(MODS); do claude plugin install "$$m@apex" || exit 1; done
 
 uninstall:
 	rm -f "$(PREFIX)/apex"
 	if grep -q '$(STYLE_MARK)' "$(STYLE)" 2>/dev/null; then rm -f "$(STYLE)"; fi
 	for s in $(SKILLS); do d="$(CLAUDE_DIR)/skills/$$s"; \
 	  if [ -f "$$d/$(MARK)" ]; then rm -rf "$$d" || exit 1; fi; done
+	-for m in $(MODS); do claude plugin uninstall "$$m@apex"; done
+	-claude plugin marketplace remove apex
 
 check:
 	@grep -q '"ponytail@ponytail"' "$(CLAUDE_DIR)/plugins/installed_plugins.json" 2>/dev/null || \
@@ -32,6 +38,8 @@ check:
 	@if [ -e "$(CLAUDE_DIR)/bin/apex" ]; then echo "$(CLAUDE_DIR)/bin/apex is a legacy Apex v0.3 install and shadows the new apex on PATH; remove it first: example/scripts/uninstall.sh" >&2; exit 1; fi
 	@for s in $(SKILLS); do d="$(CLAUDE_DIR)/skills/$$s"; \
 	  if [ -e "$$d" ] && [ ! -f "$$d/$(MARK)" ]; then echo "$$d exists and was not installed by apex; move it first" >&2; exit 1; fi; done
+	@for m in $(MODS); do if grep -o "\"$$m@[^\"]*\"" "$(CLAUDE_DIR)/plugins/installed_plugins.json" 2>/dev/null | grep -qv "@apex\""; then \
+	  echo "another $$m plugin is installed; uninstall it first: claude plugin uninstall <$$m@marketplace>" >&2; exit 1; fi; done
 	@if [ -e "$(STYLE)" ] && ! grep -q '$(STYLE_MARK)' "$(STYLE)"; then echo "$(STYLE) exists and was not installed by apex; move it first" >&2; exit 1; fi
 
 test:

@@ -16,6 +16,8 @@ Design workspace for the fresh slate. The previous Apex lives in `example/` as a
   refuses to run without ponytail.
 - One output style, `Apex`, ships with the skills and governs replies only: answer first, terse, ledger items cited by
   id, a completion claim backed by the command that proved it. It is opt-in through `/output-style`.
+- Mods (Claude Code plugins with a hooks module, such as `token-spend` for `/spend`) ship in `mods/`, a marketplace
+  named `apex`; `make install` installs each as `<mod>@apex` through the `claude` CLI, loaded in place from the clone.
 - Git is governed by a git-discipline skill with per-repo conventions; push and PR happen only on the operator's word.
 
 ## What an Agent is
