@@ -1,22 +1,20 @@
 ---
 checkout: /Users/alexanderstroev/Documents/GitHub/apex-claude
 branch: master
-head: f8cf7f3a4c65613d48b92f435b598b3d5704aa53
+head: de9e60b67247520677ecda7e80d9f3f87a977950
 ---
 ## Startup
 invoke the Agent skill (reads its private folder and .claude/LIVE.md); apex list --agent main
 
 ## State
-No item in progress. 012 dropped (operator rejected per-Agent themes). 013 closed: token-spend ships in mods/ as
-token-spend@apex, installed on this machine with its /spend history merged. Uncommitted: mods/, Makefile,
-scripts/*.ps1, README.md, docs/design/agents.md, .claude/LIVE.md, ledger 012-013, this handoff. tmp/ is untracked
-(holds tmp/token-spend-store-backup.json).
+No item in progress. 016 closed (ctx as used/total). 015 closed (weekly and Fable slots). 013 (token-spend) committed in de9e60b. 014 closed: usage-footer ships in mods/ as
+usage-footer@apex, installed and enabled, guard removed so it shows in every session; ~/.zshrc claude-work alias no
+longer passes --plugin-dir (backup tmp/zshrc.bak). Uncommitted: 014-016: Makefile, README, marketplace.json,
+apex-install-common.ps1, mods/usage-footer/, ledger 014-016, this handoff. tmp/ is untracked.
 
 ## Next
-Nothing queued. Candidate: port usage-footer (context fill, ~/.claude-work/mods/usage-footer, loaded by the
-claude-work alias via --plugin-dir) the same way; the operator narrowed 013 to /spend.
+Nothing queued.
 
 ## Open threads
-- ~/.claude/mods/token-spend and its local-mods marketplace entry, and the obsolete ~/.claude/mods/skill-themes
-  prototype, await the operator's word on deletion.
+- ~/.claude-work/mods/usage-footer (old copy, no longer loaded) awaits the operator's word on deletion.
 - PowerShell installer edits are untested here (no pwsh); verify on Windows.

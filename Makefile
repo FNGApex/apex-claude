@@ -7,7 +7,7 @@ MARK := .apex-installed
 STYLE = $(CLAUDE_DIR)/output-styles/apex.md
 STYLE_MARK := ^name: Apex$$
 # Mods install as plugins read live from mods/ (the apex marketplace); the @apex id is the ownership mark.
-MODS := token-spend
+MODS := token-spend usage-footer
 
 .PHONY: build install uninstall check test
 

@@ -39,6 +39,7 @@ They load in place from this clone, so keep it where it is; an edit there applie
 | Mod | Does |
 |---|---|
 | `token-spend` | `/spend`: token and dollar spend since install, in total and this session, by model and by source |
+| `usage-footer` | footer label beside the mode: what is left of each limit the plan reports (5h, weekly, Fable) and context tokens used over the window (`5h 98% left · weekly 69% left · ctx 82K/200K`) |
 
 Then adopt the protocol in a repo with one session that runs `/apex-init`.
 

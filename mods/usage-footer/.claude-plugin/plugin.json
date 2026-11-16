@@ -1,0 +1,1 @@
+{ "name": "usage-footer", "version": "0.1.0", "description": "Shows what is left of the 5h, weekly and Fable limits, and context tokens used over the window, in the footer next to the mode labels", "types": "./types/index.d.ts" }

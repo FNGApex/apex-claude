@@ -1,5 +1,8 @@
 {
   "name": "apex",
   "owner": { "name": "FNGApex" },
-  "plugins": [{ "name": "token-spend", "source": "./token-spend" }]
+  "plugins": [
+    { "name": "token-spend", "source": "./token-spend" },
+    { "name": "usage-footer", "source": "./usage-footer" }
+  ]
 }
