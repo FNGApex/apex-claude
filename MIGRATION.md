@@ -40,8 +40,10 @@ Rules are decided by the operator. Each one:
 
 - grants something: it starts with `Allowed:` and names what the Agent may do;
 - is specific: the action, the target and the condition, so it can be checked against one action;
+- covers a kind of work ("any modelling pass"), not one ledger item, so it outlives the item that prompted it;
 - carries no date, timestamp or history;
-- contains no prohibition and no trap. A trap or a "don't" goes in a reminder skill. Whatever no rule allows still
+- contains no prohibition and no trap. A trap, a "don't" or a limit the operator sets (one heavy process at a time, a
+  timeout on every tool call) goes in a reminder skill as a `Don't:` or `Do:` line. Whatever no rule allows still
   needs the operator's approval.
 
 ```markdown

@@ -260,8 +260,9 @@ itself. The role card, ledger, handoff and `.claude/LIVE.md` stay where they are
    | a fact about the current state | `LIVE.md` |
    | stale, or already in the ledger or `.claude/LIVE.md` | dropped |
 
-   Rules carry no dates or history. Show the operator the sorted files and wait for approval: only the operator decides
-   rules.
+   Rules carry no dates or history, and each covers a kind of work, not one ledger item. An operator limit (one
+   heavy process at a time, a timeout per tool call) is not a rule: it goes in a reminder skill as `Don't:` or `Do:`.
+   Show the operator the sorted files and wait for approval: only the operator decides rules.
 3. `git -C <repo> rm -q .claude/skills/<a>/LIVE.md`, or `rm` it when untracked.
 4. In the role card, replace the `Live notes` row with `| Notes, rules, reminders | .claude/apex/<a>/ |`. The role
    card is the operator's file: this row only, with the operator's approval.
