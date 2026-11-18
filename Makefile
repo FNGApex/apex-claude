@@ -3,6 +3,8 @@ CLAUDE_DIR ?= $(or $(CLAUDE_CONFIG_DIR),$(HOME)/.claude)
 SKILLS := agent-protocol git-discipline sign-off apex-init pr-review
 # Marks a skill directory as installed by apex; install and uninstall never touch one without it.
 MARK := .apex-installed
+# Every marked skill, listed or not, so a skill dropped from skills/ leaves no stale copy behind.
+REMOVE_SKILLS = for d in "$(CLAUDE_DIR)"/skills/*/; do if [ -f "$$d$(MARK)" ]; then rm -rf "$$d" || exit 1; fi; done
 # The output style is one file, so its own frontmatter name is the ownership mark.
 STYLE = $(CLAUDE_DIR)/output-styles/apex.md
 STYLE_MARK := ^name: Apex$$
@@ -19,16 +21,16 @@ install: check build
 	mkdir -p "$(PREFIX)" "$(CLAUDE_DIR)/skills" "$(CLAUDE_DIR)/output-styles"
 	cp bin/apex "$(PREFIX)/apex"
 	cp output-styles/apex.md "$(STYLE)"
+	$(REMOVE_SKILLS)
 	for s in $(SKILLS); do d="$(CLAUDE_DIR)/skills/$$s"; \
-	  rm -rf "$$d" && cp -R "skills/$$s" "$$d" && touch "$$d/$(MARK)" || exit 1; done
+	  cp -R "skills/$$s" "$$d" && touch "$$d/$(MARK)" || exit 1; done
 	claude plugin marketplace add "$(CURDIR)/mods"
 	for m in $(MODS); do claude plugin install "$$m@apex" || exit 1; done
 
 uninstall:
 	rm -f "$(PREFIX)/apex"
 	if grep -q '$(STYLE_MARK)' "$(STYLE)" 2>/dev/null; then rm -f "$(STYLE)"; fi
-	for s in $(SKILLS); do d="$(CLAUDE_DIR)/skills/$$s"; \
-	  if [ -f "$$d/$(MARK)" ]; then rm -rf "$$d" || exit 1; fi; done
+	$(REMOVE_SKILLS)
 	-for m in $(MODS); do claude plugin uninstall "$$m@apex"; done
 	-claude plugin marketplace remove apex
 

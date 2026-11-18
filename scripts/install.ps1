@@ -53,9 +53,9 @@ try {
 foreach ($d in $cfg.Prefix, $cfg.SkillsDir, (Split-Path $cfg.Style -Parent)) { New-Item -ItemType Directory -Force $d | Out-Null }
 Copy-Item (Join-Path $repo 'bin/apex.exe') (Join-Path $cfg.Prefix 'apex.exe') -Force
 Copy-Item (Join-Path $repo 'output-styles/apex.md') $cfg.Style -Force
+Remove-ApexSkills $cfg
 foreach ($s in $cfg.Skills) {
   $d = Join-Path $cfg.SkillsDir $s
-  if (Test-Path $d) { Remove-Item $d -Recurse -Force }
   Copy-Item (Join-Path $repo "skills/$s") $d -Recurse
   New-Item -ItemType File (Join-Path $d $cfg.Mark) | Out-Null
 }

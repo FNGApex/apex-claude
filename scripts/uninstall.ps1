@@ -18,10 +18,7 @@ $cfg = Get-ApexInstallConfig -Prefix $Prefix -ConfigDir $ConfigDir
 
 Remove-Item (Join-Path $cfg.Prefix 'apex.exe') -Force -ErrorAction SilentlyContinue
 if ((Test-Path $cfg.Style) -and (Test-ApexStyle $cfg.Style)) { Remove-Item $cfg.Style -Force }
-foreach ($s in $cfg.Skills) {
-  $d = Join-Path $cfg.SkillsDir $s
-  if (Test-Path (Join-Path $d $cfg.Mark)) { Remove-Item $d -Recurse -Force }
-}
+Remove-ApexSkills $cfg
 foreach ($m in $cfg.Mods) { & claude plugin uninstall "$m@apex" }
 & claude plugin marketplace remove apex
 Write-Host '[ok] apex removed. Restart Claude Code.' -ForegroundColor Green
