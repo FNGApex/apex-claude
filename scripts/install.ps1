@@ -23,6 +23,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'apex-install-common.ps1')
 
 $cfg = Get-ApexInstallConfig -Prefix $Prefix -ConfigDir $ConfigDir
+$env:CLAUDE_CONFIG_DIR = $cfg.ConfigDir  # claude plugin reads this, not -ConfigDir
 $repo = Split-Path $PSScriptRoot -Parent
 
 # check

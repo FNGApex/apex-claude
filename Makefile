@@ -1,5 +1,7 @@
 PREFIX ?= $(HOME)/.local/bin
 CLAUDE_DIR ?= $(or $(CLAUDE_CONFIG_DIR),$(HOME)/.claude)
+# claude plugin reads this, not CLAUDE_DIR.
+export CLAUDE_CONFIG_DIR := $(CLAUDE_DIR)
 SKILLS := agent-protocol git-discipline sign-off apex-init pr-review
 # Marks a skill directory as installed by apex; install and uninstall never touch one without it.
 MARK := .apex-installed

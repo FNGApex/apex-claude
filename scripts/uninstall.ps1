@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'apex-install-common.ps1')
 
 $cfg = Get-ApexInstallConfig -Prefix $Prefix -ConfigDir $ConfigDir
+$env:CLAUDE_CONFIG_DIR = $cfg.ConfigDir  # claude plugin reads this, not -ConfigDir
 
 Remove-Item (Join-Path $cfg.Prefix 'apex.exe') -Force -ErrorAction SilentlyContinue
 if ((Test-Path $cfg.Style) -and (Test-ApexStyle $cfg.Style)) { Remove-Item $cfg.Style -Force }
