@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -137,6 +139,9 @@ func TestUsageBeatsDiskState(t *testing.T) {
 }
 
 func TestEnvironmentErrorExits2(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0 does not deny reads on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignores directory permissions")
 	}
@@ -246,5 +251,142 @@ func TestPerTicketLedger(t *testing.T) {
 	_, out, _ = apex(t, root, "list", "--agent", "dev")
 	if !strings.Contains(out, "mono") || strings.Contains(out, "ledger:") {
 		t.Fatalf("detached list = %q, want the mono ledger", out)
+	}
+}
+
+func TestWhere(t *testing.T) {
+	root := setup(t)
+	code, out, errs := apex(t, root, "where", "--agent", "dev", "--json")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("bad json %v:\n%s", err, out)
+	}
+	for k, want := range map[string]any{
+		"layout": "legacy", "ledger": filepath.Join(root, ".claude", "ledger", "dev"),
+		"private": filepath.Join(root, ".claude", "apex", "dev"), "framing": filepath.Join(root, "CLAUDE.md"),
+		"workers": filepath.Join(root, ".apex", "workers"), "per_ticket": false, "concurrent": false,
+	} {
+		if got[k] != want {
+			t.Errorf("%s = %v, want %v", k, got[k], want)
+		}
+	}
+	if code, out, _ := apex(t, root, "where"); code != 0 || !strings.Contains(out, "layout: apex") || strings.Contains(out, "ledger:") {
+		t.Errorf("where without agent on a fresh repo: exit %d\n%s", code, out)
+	}
+	for _, args := range [][]string{{"where", "--agent", "Dev"}, {"where", "x"}, {"where", "--bogus"}} {
+		if code, _, _ := apex(t, root, args...); code != 64 {
+			t.Errorf("apex %v: exit %d, want 64", args, code)
+		}
+	}
+	if code, _, _ := apex(t, root, "where", "--agent", "ghost"); code != 1 {
+		t.Errorf("where ghost: exit %d, want 1", code)
+	}
+}
+
+// Usage is judged before git is asked anything, so these exit 64 even outside a repository.
+func TestWorkerAndSkillUsage(t *testing.T) {
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"worker"}, {"worker", "frob"}, {"worker", "spawn"}, {"worker", "spawn", "Bad_Slug"},
+		{"worker", "spawn", "ok", "--skill", "a,,b"}, {"worker", "spawn", "ok", "--item", "../1"},
+		{"worker", "list", "--state", "zombie"}, {"worker", "status", "abc"}, {"worker", "merge", "0"},
+		{"worker", "remove", "1", "2"}, {"worker", "prune", "x"},
+		{"skill"}, {"skill", "frob"}, {"skill", "search"}, {"skill", "show"}, {"skill", "list", "--kind", "wizard"},
+		{"skill", "list", "--source", "web"}, {"skill", "search", "x", "--limit", "0"}, {"skill", "check", "a", "b"},
+	} {
+		if code, _, errs := apex(t, dir, args...); code != 64 {
+			t.Errorf("apex %q: exit %d, want 64 (%s)", args, code, strings.TrimSpace(errs))
+		}
+	}
+}
+
+func TestWorkerVerbs(t *testing.T) {
+	for k, v := range map[string]string{"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"} {
+		t.Setenv(k, v)
+	}
+	root := setup(t)
+	git := func(dir string, args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git(root, "init", "-q", "-b", "main")
+	git(root, "config", "core.autocrlf", "false")
+	os.WriteFile(filepath.Join(root, "a.txt"), []byte("one\n"), 0o644)
+	git(root, "add", "a.txt")
+	git(root, "commit", "-q", "-m", "init")
+
+	code, out, errs := apex(t, root, "worker", "spawn", "clash", "--skill", "go", "--json")
+	if code != 0 {
+		t.Fatalf("spawn: exit %d: %s", code, errs)
+	}
+	var v struct {
+		ID, Branch, Worktree string
+	}
+	if err := json.Unmarshal([]byte(out), &v); err != nil || v.ID != "001" || v.Branch != "apex/001-clash" {
+		t.Fatalf("spawn json %v:\n%s", err, out)
+	}
+	os.WriteFile(filepath.Join(v.Worktree, "a.txt"), []byte("worker\n"), 0o644)
+	git(v.Worktree, "commit", "-q", "-am", "w")
+	os.WriteFile(filepath.Join(root, "a.txt"), []byte("main\n"), 0o644)
+	git(root, "commit", "-q", "-am", "m")
+
+	if _, out, _ := apex(t, root, "worker", "list"); !strings.Contains(out, "ahead 1  behind 1") || !strings.Contains(out, "1 active, 0 merged, 0 removed") {
+		t.Fatalf("list:\n%s", out)
+	}
+	code, out, _ = apex(t, root, "worker", "merge", "1", "--json")
+	if code != 5 || !strings.Contains(out, `"a.txt"`) {
+		t.Fatalf("conflicting merge: exit %d, want 5\n%s", code, out)
+	}
+	if code, _, _ := apex(t, root, "worker", "status", "9"); code != 1 {
+		t.Fatalf("status of missing worker: exit %d, want 1", code)
+	}
+	if code, _, _ := apex(t, root, "worker", "remove", "1"); code != 3 {
+		t.Fatalf("remove unmerged: exit %d, want 3", code)
+	}
+	if code, out, errs := apex(t, root, "worker", "remove", "1", "--force"); code != 0 || out != "removed 001\n" {
+		t.Fatalf("force remove: exit %d %q %s", code, out, errs)
+	}
+	if _, out, _ := apex(t, root, "worker", "list", "--state", "all"); !strings.Contains(out, "0 active, 0 merged, 1 removed") {
+		t.Fatalf("list all:\n%s", out)
+	}
+}
+
+func TestSkillVerbs(t *testing.T) {
+	root := setup(t)
+	t.Setenv("APEX_SKILLS_DIR", "")
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	t.Setenv("CODEX_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+	if code, out, errs := apex(t, root, "skill", "list"); code != 0 || !strings.Contains(out, "dev") || !strings.Contains(out, "1 skills") {
+		t.Fatalf("list: exit %d %s\n%s", code, errs, out)
+	}
+	// setup's SKILL.md has no description: check must fail with 4 and name the problem.
+	if code, out, _ := apex(t, root, "skill", "check"); code != 4 || !strings.Contains(out, "description is missing") {
+		t.Fatalf("check: exit %d\n%s", code, out)
+	}
+	if code, _, _ := apex(t, root, "skill", "show", "ghost"); code != 1 {
+		t.Fatalf("show ghost: exit %d, want 1", code)
+	}
+	if code, out, _ := apex(t, root, "skill", "show", "dev", "--body"); code != 0 || !strings.Contains(out, "name: dev\n---") {
+		t.Fatalf("show --body: exit %d\n%s", code, out)
+	}
+	if code, out, _ := apex(t, root, "skill", "search", "dev", "--json"); code != 0 || !strings.Contains(out, `"score": 8`) {
+		t.Fatalf("search: exit %d\n%s", code, out)
+	}
+	shipped, err := filepath.Abs(filepath.Join("..", "..", "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errs := apex(t, root, "skill", "check", shipped); code != 0 || !strings.Contains(out, " 0 problems") {
+		t.Fatalf("check of the shipped skills: exit %d %s\n%s", code, errs, out)
+	}
+	if code, _, _ := apex(t, root, "skill", "check", "ghost"); code != 1 {
+		t.Fatalf("check of an unknown name: exit %d, want 1", code)
 	}
 }
