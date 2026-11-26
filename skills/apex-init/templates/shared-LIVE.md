@@ -1,3 +1,4 @@
 # Shared live notes
 
-Facts every Agent in this repo needs, kept once. Every Agent reads this after its own `LIVE.md`; any Agent may edit it.
+Facts every role in this repo needs, kept once. Every stateful role reads this after its own `LIVE.md`; any of them may
+edit it. Workers read it and never write it.
