@@ -1,6 +1,6 @@
 # Installing is scripts/install.sh and scripts/uninstall.sh; these targets forward their options.
 # Unset variables are not forwarded, so the scripts own every default (see scripts/install.sh --help).
-#   WORKFLOW=orchestration|multi-agent|both   HARNESS=agents,claude,codex,custom   SKILLS_DIR=DIR
+#   WORKFLOW=orchestration|multi-agent|both   HARNESS=agents,claude,codex,gemini,t3,custom   SKILLS_DIR=DIR
 #   PREFIX=DIR   CONFIG_DIR=DIR (alias CLAUDE_DIR)   WITH_OUTPUT_STYLE=yes|no   WITH_CLAUDE_MODS=yes|no
 #   CHECK_PONYTAIL=1   YES=1   BIN=FILE
 CONFIG_DIR ?= $(CLAUDE_DIR)

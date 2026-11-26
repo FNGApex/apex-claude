@@ -12,7 +12,8 @@ usage() {
 Usage: scripts/install.sh [options]
 
   --workflow W            orchestration (default), multi-agent, or both
-  --harness H             agents (default), claude, codex, custom; comma list allowed
+  --harness H             agents (default), claude, codex, gemini, t3, custom; comma list allowed
+                          (t3 = T3 Code: the agents, claude, codex and gemini skill roots)
   --skills-dir DIR        skills directory for the custom harness (implies custom)
   --prefix DIR            where apex goes (default ~/.local/bin; must be on PATH)
   --config-dir DIR        Claude config root (default $CLAUDE_CONFIG_DIR or ~/.claude)
@@ -100,10 +101,12 @@ pick_harness() {
   echo "  2) claude   $CONFIG_DIR/skills"
   echo "  3) codex    ${CODEX_HOME:-$HOME/.codex}/skills"
   echo "  4) custom   a directory you name"
+  echo "  5) gemini   ${GEMINI_CONFIG_DIR:-$HOME/.gemini/config}/skills"
+  echo "  6) t3       T3 Code (agents, claude, codex, gemini)"
   ask "Choose [$def]: "
   HARNESS=
   for tok in $(echo "${REPLY:-$def}" | tr ',' ' '); do
-    case $tok in 1) tok=agents ;; 2) tok=claude ;; 3) tok=codex ;; 4) tok=custom ;; esac
+    case $tok in 1) tok=agents ;; 2) tok=claude ;; 3) tok=codex ;; 4) tok=custom ;; 5) tok=gemini ;; 6) tok=t3 ;; esac
     valid_harness "$tok" || die 64 "invalid harness choice '$tok'"
     HARNESS=${HARNESS:+$HARNESS,}$tok
   done
@@ -138,7 +141,7 @@ fi
 
 if [ "$PROMPT" = 1 ]; then
   case ",$HARNESS," in
-    *,claude,*)
+    *,claude,* | *,t3,*)
       [ -n "$STYLE" ] || { yes_no "Install the Apex output style?" && STYLE=yes; }
       [ -n "$MODS" ] || { yes_no "Install the Claude mods (token-spend, usage-footer)?" && MODS=yes; }
       [ "$PONYTAIL" = 1 ] || { yes_no "Require the ponytail plugin?" && PONYTAIL=1; }

@@ -1,6 +1,6 @@
 ---
 name: orchestrator-protocol
-description: The protocol the Master Orchestrator follows in the Orchestration-based Workflow. Covers startup and worker reconciliation, routing work across hundreds of skills with apex skill search and show, spawning stateless workers in temporary worktrees with apex worker spawn, writing briefs, watching and verifying workers, merge-back on request or policy with conflict handling, and cleanup. Pre-loaded by the Orchestrator's skill; use whenever the Orchestrator starts a session, routes or dispatches work, verifies a worker or merges one back.
+description: The protocol the Master Orchestrator follows in the Orchestration-based Workflow. Covers startup and worker reconciliation, routing work across hundreds of skills with apex skill search and show, spawning stateless workers in temporary worktrees with apex worker spawn (or adopting a harness-created one with apex worker adopt), writing briefs, watching and verifying workers, merge-back on request or policy with conflict handling, and cleanup. Pre-loaded by the Orchestrator's skill; use whenever the Orchestrator starts a session, routes or dispatches work, verifies a worker or merges one back.
 metadata:
   kind: protocol
 ---
@@ -54,7 +54,11 @@ in the Log and either brief a worker with no skill or ask the operator.
 ## Dispatch a worker
 
 1. `apex start <id> --agent <agent>`, unless it is already in progress.
-2. Spawn:
+2. Pick the path. Your harness either delegates into a working directory you name (Path A) or creates the child
+   worktree itself (Path B, the T3 Code harness). Use the one the harness primitives table in
+   `docs/design/orchestration.md` lists for it, and never both for one worker.
+
+   **Path A, CLI-managed worktree.** Spawn, then delegate into that worktree path:
 
    ```bash
    apex worker spawn <slug> --skill <a,b> --item <agent>/<id> [--base <branch>] --json
@@ -62,6 +66,18 @@ in the Log and either brief a worker with no skill or ask the operator.
 
    It prints `id`, `worktree`, `branch` (`apex/<wid>-<slug>`) and `base`. `--base` defaults to the branch checked out
    where you run it.
+
+   **Path B, harness-isolated worktrees (the T3 Code harness).** Call `orchestrator_capabilities` once per thread,
+   then, on that harness, dispatch `delegate_task` with `isolation: "worktree"`, taking `providerInstanceId`, `model`
+   and `options` from the tier's row in `<state>/tiers.md`. Wait for the completion wakeup; do not poll. Then register
+   what the harness created, before you run Watch and verify or Merge back:
+
+   ```bash
+   apex worker adopt <worktree-or-branch> --skill <a,b> --item <agent>/<id> [--base <branch>] --json
+   ```
+
+   It prints the same `id`, `worktree`, `branch` and `base`, and from then on every `apex worker` verb treats the
+   worker like a spawned one.
 3. Write the brief, inline in the delegate prompt or as `<workers>/<wid>.brief.md` (git-ignored with the rest of
    `<workers>/`):
 
@@ -74,11 +90,12 @@ in the Log and either brief a worker with no skill or ask the operator.
    ```
 
 4. Delegate with the harness's delegate primitive (background delegate for fan-out), with the model for the skill's
-   `metadata.tier` from `<state>/tiers.md`. The prompt names: the worktree path as working directory, the brief,
-   `worker-protocol`, and each assigned skill's path from `apex skill show`.
+   `metadata.tier` from `<state>/tiers.md`. The prompt names: the worktree path as working directory (Path A) or
+   that the harness assigns it (Path B), the brief, `worker-protocol`, and each assigned skill's path from
+   `apex skill show`.
 5. Log one line: worker id, branch, skills, tier.
 
-Never use the harness's own worktree isolation: `apex worker spawn` owns the worktree. At most 10 workers are live at
+On Path A never use the harness's own worktree isolation: `apex worker spawn` owns the worktree. At most 10 workers are live at
 once unless a `RULES.md` line raises the cap; `apex worker list --state active` counts them.
 
 ## Watch and verify
@@ -122,6 +139,9 @@ retry `apex worker merge <wid>`.
 - A merged worker: `apex worker prune` removes every clean merged one.
 - A worker whose work is dropped: `apex worker remove <wid>`. With commits or changes still in it, ask the operator
   before `--force`.
+- An adopted worker's worktree and branch belong to the harness: `remove` and `prune` only untrack it and leave them
+  in place. Pass `--purge` to `apex worker remove` only when the operator wants the external worktree and branch
+  deleted as well.
 - When every worker of an item is merged or dropped and the Goal is met: write `## Outcome`, `apex close <id> "done:
   <one line>" --agent <agent>`, run the `git-discipline` commit check, then rewrite the handoff.
 

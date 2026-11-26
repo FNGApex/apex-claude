@@ -14,7 +14,7 @@ peer-to-peer workflow, Multi-Agent Collaboration, is in [agents.md](agents.md) P
 - **Skill-based workers.** What a worker knows comes from the worker skills the Orchestrator assigns. There are no
   built-in worker personalities.
 - **A temporary worktree and branch per worker.** `apex worker spawn` creates both, and `apex worker remove` or
-  `prune` deletes both. Workers never share a checkout, so concurrent workers never touch each other's files.
+  `prune` deletes both. A harness that creates the worktree itself hands it over with `apex worker adopt`. Workers never share a checkout, so concurrent workers never touch each other's files.
 - **Progressive skill discovery.** A repo can hold hundreds of skills. The Orchestrator searches metadata and loads
   one skill's body only once a worker needs it, and never bulk-reads a skills directory.
 - **Model and harness agnostic.** Roles ask for a capability tier, never a model. Harness-specific mechanics appear
@@ -96,20 +96,28 @@ reports `layout: legacy` and resolves every key into it, so the protocol skills 
 Skills name a primitive ("delegate to a worker", "load a skill"), never a harness tool. This table maps the primitives
 for each harness. It is the only place a harness tool is named.
 
-| Primitive | Claude Code harness | Codex harness | Generic CLI or MCP harness |
-|---|---|---|---|
-| Framing file | `CLAUDE.md` containing `@AGENTS.md` | `AGENTS.md` | `AGENTS.md`, or a system prompt that includes it |
-| Skill load | the Skill tool, or a file read of `SKILL.md` | a file read of `SKILL.md` | a file read of `SKILL.md` |
-| Delegate (foreground) | the Agent tool, blocking | a spawned sub-agent, then wait | a child process or MCP call that returns the report |
-| Background delegate | the Agent tool in the background | a spawned sub-agent, not awaited | a detached child process whose report lands in a file |
-| Workflow runner | the Workflow tool, only when the operator opts in | none: background delegates | none: background delegates |
-| Peer messaging (Collaboration only) | `ListAgents` and `SendMessage` | none | none, or an MCP messaging server |
-| Reply style | the `reply-style` skill; the `Apex` output style is an optional Claude Code extra | the `reply-style` skill | the `reply-style` skill |
-| Memory off | `.claude/settings.json` holding `"autoMemoryEnabled": false` | no automatic memory to turn off | turn off any memory the harness keeps |
+| Primitive | Claude Code harness | Codex harness | T3 Code harness | Generic CLI or MCP harness |
+|---|---|---|---|---|
+| Framing file | `CLAUDE.md` containing `@AGENTS.md` | `AGENTS.md` | `AGENTS.md` (`CLAUDE.md` containing `@AGENTS.md` on Claude threads) | `AGENTS.md`, or a system prompt that includes it |
+| Skill load | the Skill tool, or a file read of `SKILL.md` | a file read of `SKILL.md` | skill discovery, or a file read of `SKILL.md` | a file read of `SKILL.md` |
+| Delegate (foreground) | the Agent tool, blocking | a spawned sub-agent, then wait | `orchestrator_capabilities` once per thread, then `delegate_task` with `mode: "wait"` and `isolation: "worktree"` | a child process or MCP call that returns the report |
+| Background delegate | the Agent tool in the background | a spawned sub-agent, not awaited | `delegate_task` with `mode: "async"` and `isolation: "worktree"`; a reactive wakeup lands the result, never poll `task_status` | a detached child process whose report lands in a file |
+| Workflow runner | the Workflow tool, only when the operator opts in | none: background delegates | scriptable workflows (`run_workflow`) only when the operator asks; else parallel `delegate_task` calls | none: background delegates |
+| Peer messaging (Collaboration only) | `ListAgents` and `SendMessage` | none | `t3_thread_send` and `t3_thread_read` | none, or an MCP messaging server |
+| Reply style | the `reply-style` skill; the `Apex` output style is an optional Claude Code extra | the `reply-style` skill | the `reply-style` skill (the `Apex` output style on Claude threads) | the `reply-style` skill |
+| Memory off | `.claude/settings.json` holding `"autoMemoryEnabled": false` | no automatic memory to turn off | rely on `.apex/` state (`AGENTS.md`) | turn off any memory the harness keeps |
 
-A delegate always gets the worker's worktree from `apex worker spawn` as its working directory. A harness's own
-worktree isolation, such as the Claude Code Agent tool's `isolation: "worktree"`, is never used: `apex` owns the
-worktree, so the manifest, the branch name and merge-back stay deterministic.
+Worktree isolation has two modes, and a repo uses whichever its harness supports.
+
+1. **The Orchestrator delegates into a caller-specified `cwd`.** The Claude Code, Codex and generic harnesses take the
+   working directory from the caller. `apex worker spawn` creates `<workers>/<id>/`, the delegate runs there, and the
+   harness's own worktree isolation, such as the Claude Code Agent tool's `isolation: "worktree"`, is never used:
+   `apex` owns the worktree, so the manifest, the branch name and merge-back stay deterministic.
+2. **The harness owns child worktree isolation.** The T3 Code harness creates the child worktree and branch itself,
+   through `delegate_task` with `isolation: "worktree"`. The Orchestrator lets it, then registers the result with
+   `apex worker adopt <worktree-or-branch>`. From then on `apex worker list`, `status`, `merge` and `prune` track the
+   adopted worker exactly like a spawned one. `remove` and `prune` untrack an adopted worker without deleting the
+   harness's worktree or branch, unless `--purge` is passed.
 
 ## Capability tiers
 
@@ -160,7 +168,8 @@ collide.
 2. `<root>/.claude/skills` (legacy layout)
 3. `$APEX_SKILLS_DIR`
 4. `~/.agents/skills`
-5. the harness user skill directories, Claude Code and Codex
+5. the harness user skill directories: Claude Code, Codex, T3 Code (all four roots) and Gemini
+   (`${GEMINI_CONFIG_DIR:-~/.gemini/config}/skills`, so `.gemini/config/skills` by default)
 
 ### Progressive routing
 
@@ -192,11 +201,12 @@ stateDiagram-v2
 | Verb | Does | Requires |
 |---|---|---|
 | `apex worker spawn <slug> [--base <branch>] [--skill a,b] [--item <ref>]` | creates branch `apex/<id>-<slug>` from `<base>` (default: the branch checked out in the current directory) and its worktree `<workers>/<id>/`; prints `id`, `worktree`, `branch`, `base` | a valid slug |
+| `apex worker adopt <worktree-or-branch> [--slug s] [--base b] [--skill a,b] [--item ref]` | registers a worktree and branch a harness created (such as T3 Code's `delegate_task` with `isolation: "worktree"`) as a worker, with a manifest like a spawned one's; prints `id`, `worktree`, `branch`, `base` | an existing worktree or branch |
 | `apex worker list [--state active,merged\|all]` | one row per worker: state, `worktree` `ok`, `missing` or `drift`, `ahead`/`behind`, `dirty`, `branch -> base`, skills, item | |
 | `apex worker status <id>` | the same for one worker | |
 | `apex worker merge <id> [--message <msg>]` | `--no-ff` merge of the branch into `<base>`, in the checkout holding `<base>`; state becomes `merged` | `dirty == 0`, `ahead > 0`, a clean index in that checkout |
-| `apex worker remove <id> [--force]` | removes the worktree and branch; state becomes `removed` | `dirty == 0` and `ahead == 0`, or `--force` |
-| `apex worker prune` | removes every clean `merged` worker and prunes stale git worktrees | |
+| `apex worker remove <id> [--force] [--purge]` | removes the worktree and branch of a spawned worker; state becomes `removed`. An adopted worker is only untracked, and its worktree and branch stay unless `--purge` is passed | `dirty == 0` and `ahead == 0`, or `--force` |
+| `apex worker prune` | removes every clean `merged` worker (untracking adopted ones) and prunes stale git worktrees | |
 
 Every worker verb is repo-scoped, takes no `--agent`, and prints JSON with `--json`. The exit codes are those of the
 ledger verbs, plus `5`: `apex worker merge` hit a conflict, aborted the merge cleanly and listed the conflicting files.
@@ -235,9 +245,11 @@ The worker's last message, and the only thing it returns.
 
 1. **Pick.** The Orchestrator starts a ledger item: `apex start <id> --agent orchestrator`.
 2. **Route.** It finds worker skills with progressive routing and picks a tier from each skill's `metadata.tier`.
-3. **Spawn.** `apex worker spawn <slug> --skill <a,b> --item orchestrator/<id> [--base <branch>]`.
+3. **Spawn.** `apex worker spawn <slug> --skill <a,b> --item orchestrator/<id> [--base <branch>]`. On a harness that
+   owns child worktrees, skip this step: the harness creates the worktree in step 4 and `apex worker adopt` registers it.
 4. **Brief and delegate.** It writes the brief and calls the delegate primitive at the worktree path, with the model
-   for the tier.
+   for the tier. On a harness that owns child worktrees it delegates with that harness's worktree isolation, then runs
+   `apex worker adopt <worktree-or-branch> --skill <a,b> --item orchestrator/<id>` on the result.
 5. **Watch.** `apex worker list` and `apex worker status <id>` show progress while workers run; the item's Log gets
    one line per spawn, report and verdict.
 6. **Verify.** For each report it reads `git -C <wt> log <base>..HEAD --oneline` and `git -C <wt> diff --stat

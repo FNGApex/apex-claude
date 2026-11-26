@@ -29,7 +29,7 @@ workflow_name() {
   esac
 }
 valid_workflow() { case $1 in orchestration | multi-agent | both) return 0 ;; esac; return 1; }
-valid_harness() { case $1 in agents | claude | codex | custom) return 0 ;; esac; return 1; }
+valid_harness() { case $1 in agents | claude | codex | gemini | t3 | custom) return 0 ;; esac; return 1; }
 
 conf_skills() { sed -n "s/^$1:[[:space:]]*//p" "$APEX_CONF" | tr -d '\r'; }
 # One skill per line; "both" is the union with duplicates dropped, order kept.
@@ -45,24 +45,29 @@ harness_dir() {
     agents) printf '%s/.agents/skills' "$HOME" ;;
     claude) printf '%s/skills' "$CONFIG_DIR" ;;
     codex) printf '%s/skills' "${CODEX_HOME:-$HOME/.codex}" ;;
+    gemini) printf '%s/skills' "${GEMINI_CONFIG_DIR:-$HOME/.gemini/config}" ;;
     custom) printf '%s' "$SKILLS_DIR" ;;
   esac
 }
 
 # Validates $HARNESS (comma list) and needs $SKILLS_DIR when it names custom.
 check_harness_list() {
-  [ -n "$HARNESS" ] || die 64 "--harness needs at least one of agents, claude, codex, custom"
+  [ -n "$HARNESS" ] || die 64 "--harness needs at least one of agents, claude, codex, gemini, t3, custom"
   case ",$HARNESS," in *,,*) die 64 "--harness '$HARNESS' has an empty entry" ;; esac
   for h in $(echo "$HARNESS" | tr ',' ' '); do
-    valid_harness "$h" || die 64 "unknown harness '$h' (agents, claude, codex, custom)"
+    valid_harness "$h" || die 64 "unknown harness '$h' (agents, claude, codex, gemini, t3, custom)"
     if [ "$h" = custom ] && [ -z "$SKILLS_DIR" ]; then die 64 "--harness custom needs --skills-dir DIR"; fi
   done
 }
 
 # "harness<TAB>dir" per line for $HARNESS, one line per distinct directory, order kept.
+# t3 (T3 Code) expands to the agents, claude, codex and gemini roots, all recorded as t3.
 targets() {
   for h in $(echo "$HARNESS" | tr ',' ' '); do
-    printf '%s\t%s\n' "$h" "$(harness_dir "$h")"
+    case $h in
+      t3) for p in agents claude codex gemini; do printf 't3\t%s\n' "$(harness_dir "$p")"; done ;;
+      *) printf '%s\t%s\n' "$h" "$(harness_dir "$h")" ;;
+    esac
   done | awk -F'\t' '!seen[$2]++'
 }
 

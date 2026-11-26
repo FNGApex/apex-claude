@@ -37,6 +37,7 @@ $(mf_rows | cut -f2)
 $HOME/.agents/skills
 $CONFIG_DIR/skills
 ${CODEX_HOME:-$HOME/.codex}/skills
+${GEMINI_CONFIG_DIR:-$HOME/.gemini/config}/skills
 $SKILLS_DIR
 EOF
 
