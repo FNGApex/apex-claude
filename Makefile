@@ -1,51 +1,40 @@
-PREFIX ?= $(HOME)/.local/bin
-CLAUDE_DIR ?= $(or $(CLAUDE_CONFIG_DIR),$(HOME)/.claude)
-# claude plugin reads this, not CLAUDE_DIR.
-export CLAUDE_CONFIG_DIR := $(CLAUDE_DIR)
-SKILLS := agent-protocol git-discipline sign-off apex-init pr-review
-# Marks a skill directory as installed by apex; install and uninstall never touch one without it.
-MARK := .apex-installed
-# Every marked skill, listed or not, so a skill dropped from skills/ leaves no stale copy behind.
-REMOVE_SKILLS = for d in "$(CLAUDE_DIR)"/skills/*/; do if [ -f "$$d$(MARK)" ]; then rm -rf "$$d" || exit 1; fi; done
-# The output style is one file, so its own frontmatter name is the ownership mark.
-STYLE = $(CLAUDE_DIR)/output-styles/apex.md
-STYLE_MARK := ^name: Apex$$
-# Mods install as plugins read live from mods/ (the apex marketplace); the @apex id is the ownership mark.
-MODS := token-spend usage-footer
+# Installing is scripts/install.sh and scripts/uninstall.sh; these targets forward their options.
+# Unset variables are not forwarded, so the scripts own every default (see scripts/install.sh --help).
+#   WORKFLOW=orchestration|multi-agent|both   HARNESS=agents,claude,codex,custom   SKILLS_DIR=DIR
+#   PREFIX=DIR   CONFIG_DIR=DIR (alias CLAUDE_DIR)   WITH_OUTPUT_STYLE=yes|no   WITH_CLAUDE_MODS=yes|no
+#   CHECK_PONYTAIL=1   YES=1   BIN=FILE
+CONFIG_DIR ?= $(CLAUDE_DIR)
+flag = $(if $($(1)),$(2) "$($(1))")
+onoff = $(if $($(1)),$(2)=$(if $(filter no 0 false,$($(1))),no,yes))
+COMMON = $(call flag,PREFIX,--prefix) $(call flag,CONFIG_DIR,--config-dir) $(call flag,SKILLS_DIR,--skills-dir)
+INSTALL_ARGS = $(COMMON) $(call flag,WORKFLOW,--workflow) $(call flag,HARNESS,--harness) \
+  $(call onoff,WITH_OUTPUT_STYLE,--with-output-style) $(call onoff,WITH_CLAUDE_MODS,--with-claude-mods) \
+  $(if $(CHECK_PONYTAIL),--check-ponytail) $(if $(YES),--yes) $(call flag,BIN,--bin)
 
-.PHONY: build install uninstall check test
+.PHONY: build test install install-custom install-orchestration install-multi-agent uninstall check
 
 build:
 	go build -trimpath -o bin/apex ./cmd/apex
 
-# User skills, not a plugin: plugin skills are always namespaced (docs/design/agents.md).
-install: check build
-	mkdir -p "$(PREFIX)" "$(CLAUDE_DIR)/skills" "$(CLAUDE_DIR)/output-styles"
-	cp bin/apex "$(PREFIX)/apex"
-	cp output-styles/apex.md "$(STYLE)"
-	$(REMOVE_SKILLS)
-	for s in $(SKILLS); do d="$(CLAUDE_DIR)/skills/$$s"; \
-	  cp -R "skills/$$s" "$$d" && touch "$$d/$(MARK)" || exit 1; done
-	claude plugin marketplace add "$(CURDIR)/mods"
-	for m in $(MODS); do claude plugin install "$$m@apex" || exit 1; done
+install:
+	sh scripts/install.sh $(INSTALL_ARGS)
+
+install-custom:
+	sh scripts/install.sh $(INSTALL_ARGS) --interactive
+
+install-orchestration:
+	sh scripts/install.sh $(INSTALL_ARGS) --workflow orchestration
+
+install-multi-agent:
+	sh scripts/install.sh $(INSTALL_ARGS) --workflow multi-agent
 
 uninstall:
-	rm -f "$(PREFIX)/apex"
-	if grep -q '$(STYLE_MARK)' "$(STYLE)" 2>/dev/null; then rm -f "$(STYLE)"; fi
-	$(REMOVE_SKILLS)
-	-for m in $(MODS); do claude plugin uninstall "$$m@apex"; done
-	-claude plugin marketplace remove apex
+	sh scripts/uninstall.sh $(COMMON)
 
 check:
-	@grep -q '"ponytail@ponytail"' "$(CLAUDE_DIR)/plugins/installed_plugins.json" 2>/dev/null || \
-	  { echo "ponytail plugin is not installed: /plugin marketplace add DietrichGebert/ponytail, then /plugin install ponytail@ponytail" >&2; exit 1; }
-	@if [ -e "$(CLAUDE_DIR)/bin/apex" ]; then echo "$(CLAUDE_DIR)/bin/apex is a legacy Apex v0.3 install and shadows the new apex on PATH; remove it first: example/scripts/uninstall.sh" >&2; exit 1; fi
-	@for s in $(SKILLS); do d="$(CLAUDE_DIR)/skills/$$s"; \
-	  if [ -e "$$d" ] && [ ! -f "$$d/$(MARK)" ]; then echo "$$d exists and was not installed by apex; move it first" >&2; exit 1; fi; done
-	@for m in $(MODS); do if grep -o "\"$$m@[^\"]*\"" "$(CLAUDE_DIR)/plugins/installed_plugins.json" 2>/dev/null | grep -qv "@apex\""; then \
-	  echo "another $$m plugin is installed; uninstall it first: claude plugin uninstall <$$m@marketplace>" >&2; exit 1; fi; done
-	@if [ -e "$(STYLE)" ] && ! grep -q '$(STYLE_MARK)' "$(STYLE)"; then echo "$(STYLE) exists and was not installed by apex; move it first" >&2; exit 1; fi
+	sh scripts/install.sh $(INSTALL_ARGS) --check
 
 test:
 	go test ./...
 	@if command -v node >/dev/null; then node scripts/check-pr-review.mjs; else echo "skipped scripts/check-pr-review.mjs: node is not on PATH"; fi
+	@if [ -f scripts/check-terms.mjs ] && command -v node >/dev/null; then node scripts/check-terms.mjs; else echo "skipped scripts/check-terms.mjs: missing or node is not on PATH"; fi
