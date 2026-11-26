@@ -96,6 +96,7 @@ func TestSkillRootsOrder(t *testing.T) {
 	t.Setenv("APEX_SKILLS_DIR", "one"+string(os.PathListSeparator)+string(os.PathListSeparator)+"two")
 	t.Setenv("CLAUDE_CONFIG_DIR", "cc")
 	t.Setenv("CODEX_HOME", "cx")
+	t.Setenv("GEMINI_CONFIG_DIR", "gm")
 	var got []string
 	for _, r := range SkillRoots(root) {
 		got = append(got, r.Source+"="+r.Path)
@@ -108,6 +109,7 @@ func TestSkillRootsOrder(t *testing.T) {
 		"user=" + filepath.Join(home, ".agents", "skills"),
 		"user-claude=" + filepath.Join("cc", "skills"),
 		"user-codex=" + filepath.Join("cx", "skills"),
+		"user-gemini=" + filepath.Join("gm", "skills"),
 	}
 	if len(got) != len(want) {
 		t.Fatalf("roots = %v\nwant %v", got, want)
@@ -116,5 +118,15 @@ func TestSkillRootsOrder(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("root %d = %s, want %s", i, got[i], want[i])
 		}
+	}
+}
+
+func TestSkillRootsGeminiDefault(t *testing.T) {
+	t.Setenv("GEMINI_CONFIG_DIR", "")
+	roots := SkillRoots(t.TempDir())
+	last := roots[len(roots)-1]
+	home, _ := os.UserHomeDir()
+	if want := filepath.Join(home, ".gemini", "config", "skills"); last.Source != "user-gemini" || last.Path != want {
+		t.Errorf("last root = %s=%s, want user-gemini=%s", last.Source, last.Path, want)
 	}
 }

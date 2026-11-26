@@ -1,6 +1,7 @@
 // Package worker manages an Orchestrator's workers: each is a temporary git worktree on its own branch under
-// <main>/.apex/workers/<id>, described by the manifest <id>.json beside it. The manifest records intent; git is asked
-// for the live state every time.
+// <main>/.apex/workers/<id>, described by the manifest <id>.json beside it. An adopted (external) worker tracks a
+// worktree or branch some other tool made, wherever it lives. The manifest records intent; git is asked for the live
+// state every time.
 package worker
 
 import (
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -45,10 +47,12 @@ type Manifest struct {
 	Merged    string   `json:"merged,omitempty"`
 	MergedSHA string   `json:"merged_sha,omitempty"`
 	Removed   string   `json:"removed,omitempty"`
+	External  bool     `json:"external,omitempty"` // adopted: apex did not create the worktree or branch
+	Worktree  string   `json:"worktree,omitempty"` // external only; empty when only the branch was adopted
 }
 
-// Live is what git says about a worker now. Worktree is ok, missing (no directory) or drift (another branch checked
-// out). Ahead and Behind compare the worker branch with its base.
+// Live is what git says about a worker now. Worktree is ok, missing (no directory), drift (another branch checked
+// out) or branch (an adopted branch with no worktree). Ahead and Behind compare the worker branch with its base.
 type Live struct {
 	Worktree string `json:"worktree"`
 	Head     string `json:"head"`
@@ -62,6 +66,13 @@ var (
 	itemRe  = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*/)?[0-9]+$`)
 	skillRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 )
+
+// badRef rejects an adopted branch name apex could not have recorded: empty, whitespace, control chars or "..".
+func badRef(s string) bool {
+	return s == "" || strings.Contains(s, "..") || strings.ContainsFunc(s, func(r rune) bool {
+		return r <= ' ' || r == 0x7f
+	})
+}
 
 func CheckSlug(s string) error {
 	if !slugRe.MatchString(s) {
@@ -111,6 +122,18 @@ func New(root string) *Manager {
 // Worktree is the derived checkout path of a worker.
 func (m *Manager) Worktree(id string) string { return filepath.Join(m.dir, id) }
 
+// WorktreePath is where the worker's checkout is: the derived path, or for an adopted worker the recorded one ("" when
+// only its branch was adopted).
+func (m *Manager) WorktreePath(mf Manifest) string {
+	if !mf.External {
+		return m.Worktree(mf.ID)
+	}
+	if mf.Worktree == "" {
+		return ""
+	}
+	return filepath.Clean(mf.Worktree)
+}
+
 func (m *Manager) stamp() string { return m.now().UTC().Format(time.RFC3339) }
 
 func (m *Manager) Spawn(dir, slug, base string, skills []string, item string) (Manifest, error) {
@@ -120,20 +143,42 @@ func (m *Manager) Spawn(dir, slug, base string, skills []string, item string) (M
 	if err := CheckItem(item); err != nil {
 		return Manifest{}, err
 	}
+	base, sha, err := m.resolveBase(dir, base)
+	if err != nil {
+		return Manifest{}, err
+	}
+	mf, err := m.create(Manifest{Slug: slug, Base: base, BaseSHA: sha, Skills: skills, Item: item})
+	if err != nil {
+		return Manifest{}, err
+	}
+	if _, err := git(m.root, "worktree", "add", "-q", "-b", mf.Branch, m.Worktree(mf.ID), sha); err != nil {
+		os.Remove(filepath.Join(m.dir, mf.ID+".json"))
+		return Manifest{}, err
+	}
+	return mf, nil
+}
+
+// resolveBase defaults base to dir's current branch and returns it with its commit.
+func (m *Manager) resolveBase(dir, base string) (string, string, error) {
 	if base == "" {
 		cur, err := git(dir, "branch", "--show-current")
 		if err != nil {
-			return Manifest{}, err
+			return "", "", err
 		}
 		if cur == "" {
-			return Manifest{}, errors.New("HEAD is detached; pass --base <branch>")
+			return "", "", errors.New("HEAD is detached; pass --base <branch>")
 		}
 		base = cur
 	}
 	sha, err := git(m.root, "rev-parse", "-q", "--verify", "refs/heads/"+base+"^{commit}")
 	if err != nil {
-		return Manifest{}, fmt.Errorf("%w: no local branch %q", exit.NotFound, base)
+		return "", "", fmt.Errorf("%w: no local branch %q", exit.NotFound, base)
 	}
+	return base, sha, nil
+}
+
+// create writes mf as a new active manifest under the next free id; a spawned worker's branch derives from that id.
+func (m *Manager) create(mf Manifest) (Manifest, error) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		return Manifest{}, err
 	}
@@ -144,11 +189,10 @@ func (m *Manager) Spawn(dir, slug, base string, skills []string, item string) (M
 			return Manifest{}, err
 		}
 	}
-	if skills == nil {
-		skills = []string{}
+	if mf.Skills == nil {
+		mf.Skills = []string{}
 	}
-	mf := Manifest{Slug: slug, State: StateActive, Base: base, BaseSHA: sha, Skills: skills, Item: item,
-		Created: m.stamp()}
+	mf.State, mf.Created = StateActive, m.stamp()
 	for {
 		ids, err := store.IDs(m.dir, ".json")
 		if err != nil {
@@ -159,7 +203,9 @@ func (m *Manager) Spawn(dir, slug, base string, skills []string, item string) (M
 			next = ids[len(ids)-1] + 1
 		}
 		mf.ID = fmt.Sprintf("%03d", next)
-		mf.Branch = "apex/" + mf.ID + "-" + slug
+		if !mf.External {
+			mf.Branch = "apex/" + mf.ID + "-" + mf.Slug
+		}
 		err = m.write(mf, os.Link)
 		if err == nil {
 			break
@@ -176,11 +222,115 @@ func (m *Manager) Spawn(dir, slug, base string, skills []string, item string) (M
 				filepath.Join(m.dir, store.Name(next, ".json")))
 		}
 	}
-	if _, err := git(m.root, "worktree", "add", "-q", "-b", mf.Branch, m.Worktree(mf.ID), sha); err != nil {
-		os.Remove(filepath.Join(m.dir, mf.ID+".json"))
+	return mf, nil
+}
+
+var slugJunk = regexp.MustCompile(`[^a-z0-9]+`)
+
+// Adopt tracks an existing worktree or local branch (target: a branch name, refs/heads/ optional, or a worktree path)
+// as an external worker. Apex never created it, so removing the worker later leaves it in place unless purged.
+func (m *Manager) Adopt(dir, target, slug, base string, skills []string, item string) (Manifest, error) {
+	if err := CheckItem(item); err != nil {
 		return Manifest{}, err
 	}
-	return mf, nil
+	if slug != "" {
+		if err := CheckSlug(slug); err != nil {
+			return Manifest{}, err
+		}
+	}
+	if target == "" || strings.ContainsFunc(target, func(r rune) bool { return r < ' ' || r == 0x7f }) {
+		return Manifest{}, fmt.Errorf("%w: adopt needs a worktree path or branch, got %q", exit.Usage, target)
+	}
+	base, _, err := m.resolveBase(dir, base)
+	if err != nil {
+		return Manifest{}, err
+	}
+	wts, err := m.worktrees()
+	if err != nil {
+		return Manifest{}, err
+	}
+	name := strings.TrimPrefix(target, "refs/heads/")
+	wtPath, branch, found := "", "", false
+	for _, w := range wts {
+		if w.branch != "" && w.branch == name {
+			wtPath, branch, found = w.path, w.branch, true
+			break
+		}
+	}
+	if !found {
+		p := target
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, p)
+		}
+		p = canon(p)
+		for _, w := range wts {
+			if samePath(canon(w.path), p) {
+				if w.branch == "" {
+					return Manifest{}, fmt.Errorf("%w: worktree %s has detached HEAD", exit.Transition, w.path)
+				}
+				wtPath, branch, found = w.path, w.branch, true
+				break
+			}
+		}
+	}
+	if !found {
+		if badRef(name) {
+			return Manifest{}, fmt.Errorf("%w: no worktree or local branch %q", exit.NotFound, target)
+		}
+		if _, err := git(m.root, "rev-parse", "-q", "--verify", "refs/heads/"+name+"^{commit}"); err != nil {
+			return Manifest{}, fmt.Errorf("%w: no worktree or local branch %q", exit.NotFound, target)
+		}
+		branch = name
+	}
+	switch {
+	case wtPath != "" && samePath(canon(wtPath), canon(m.root)):
+		return Manifest{}, fmt.Errorf("%w: cannot adopt the main checkout", exit.Transition)
+	case branch == base:
+		return Manifest{}, fmt.Errorf("%w: cannot adopt base branch %s", exit.Transition, base)
+	}
+	all, err := m.List()
+	if err != nil {
+		return Manifest{}, err
+	}
+	for _, mf := range all {
+		if mf.State == StateActive && mf.Branch == branch {
+			return Manifest{}, fmt.Errorf("%w: branch %s is already tracked by active worker %s", exit.Transition,
+				branch, mf.ID)
+		}
+	}
+	if slug == "" {
+		s := strings.TrimPrefix(strings.TrimPrefix(branch, "t3/"), "apex/")
+		s = strings.Trim(slugJunk.ReplaceAllString(strings.ToLower(s), "-"), "-")
+		if len(s) > 40 {
+			s = strings.TrimRight(s[:40], "-")
+		}
+		if CheckSlug(s) != nil {
+			return Manifest{}, fmt.Errorf("%w: cannot derive a slug from branch %q; pass --slug", exit.Usage, branch)
+		}
+		slug = s
+	}
+	sha, err := git(m.root, "merge-base", "refs/heads/"+base, "refs/heads/"+branch)
+	if err != nil { // unrelated histories
+		if sha, err = git(m.root, "rev-parse", "-q", "--verify", "refs/heads/"+base+"^{commit}"); err != nil {
+			return Manifest{}, err
+		}
+	}
+	return m.create(Manifest{Slug: slug, Branch: branch, Base: base, BaseSHA: sha, Skills: skills, Item: item,
+		External: true, Worktree: wtPath})
+}
+
+func canon(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return filepath.Clean(p)
+}
+
+func samePath(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 func (m *Manager) write(mf Manifest, place func(oldpath, newpath string) error) error {
@@ -216,8 +366,12 @@ func (m *Manager) Get(id int) (Manifest, error) {
 		err = fmt.Errorf("bad state %q", mf.State)
 	case CheckSlug(mf.Slug) != nil:
 		err = fmt.Errorf("bad slug %q", mf.Slug)
-	case mf.Branch != "apex/"+mf.ID+"-"+mf.Slug:
+	case !mf.External && mf.Worktree != "":
+		err = errors.New("worktree recorded for a worker apex created")
+	case !mf.External && mf.Branch != "apex/"+mf.ID+"-"+mf.Slug:
 		err = fmt.Errorf("branch %q does not match id and slug", mf.Branch)
+	case mf.External && badRef(mf.Branch):
+		err = fmt.Errorf("bad branch %q", mf.Branch)
 	case mf.Base == "" || mf.BaseSHA == "":
 		err = errors.New("missing base")
 	}
@@ -247,8 +401,21 @@ func (m *Manager) List() ([]Manifest, error) {
 // Live asks git for the worker's state. A removed worker has none.
 func (m *Manager) Live(mf Manifest) (Live, error) {
 	var lv Live
-	wt := m.Worktree(mf.ID)
-	if _, err := os.Stat(wt); err != nil {
+	wt := m.WorktreePath(mf)
+	if mf.External && wt == "" {
+		// Branch-only adoption: follow the branch into a worktree if one has it checked out now.
+		p, err := m.checkoutOf(mf.Branch)
+		if err != nil && !errors.Is(err, exit.Transition) {
+			return lv, err
+		}
+		wt = p
+	}
+	if wt == "" {
+		lv.Worktree = "branch"
+		if sha, err := git(m.root, "rev-parse", "-q", "--verify", "refs/heads/"+mf.Branch); err == nil {
+			lv.Head = sha
+		}
+	} else if _, err := os.Stat(wt); err != nil {
 		if !os.IsNotExist(err) {
 			return lv, err
 		}
@@ -315,7 +482,7 @@ func (m *Manager) Merge(id int, msg string) (Manifest, error) {
 		return mf, err
 	}
 	switch {
-	case lv.Worktree != "ok":
+	case lv.Worktree != "ok" && !(mf.External && (lv.Worktree == "missing" || lv.Worktree == "branch")):
 		return mf, fmt.Errorf("%w: worker %s worktree is %s", exit.Transition, mf.ID, lv.Worktree)
 	case lv.Dirty > 0:
 		return mf, fmt.Errorf("%w: worker %s has %d uncommitted change(s)", exit.Transition, mf.ID, lv.Dirty)
@@ -355,26 +522,43 @@ func (m *Manager) Merge(id int, msg string) (Manifest, error) {
 	return mf, m.write(mf, os.Rename)
 }
 
+type checkout struct{ path, branch string } // branch is "" when detached
+
+// worktrees lists every worktree of the repo with the branch it has checked out.
+func (m *Manager) worktrees() ([]checkout, error) {
+	out, err := git(m.root, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var all []checkout
+	for _, line := range strings.Split(out, "\n") {
+		if p, ok := strings.CutPrefix(line, "worktree "); ok {
+			all = append(all, checkout{path: filepath.Clean(p)})
+		} else if b, ok := strings.CutPrefix(line, "branch refs/heads/"); ok && len(all) > 0 {
+			all[len(all)-1].branch = b
+		}
+	}
+	return all, nil
+}
+
 // checkoutOf finds the worktree that has branch checked out.
 func (m *Manager) checkoutOf(branch string) (string, error) {
-	out, err := git(m.root, "worktree", "list", "--porcelain")
+	wts, err := m.worktrees()
 	if err != nil {
 		return "", err
 	}
-	var path string
-	for _, line := range strings.Split(out, "\n") {
-		if p, ok := strings.CutPrefix(line, "worktree "); ok {
-			path = filepath.Clean(p)
-		} else if line == "branch refs/heads/"+branch {
-			return path, nil
+	for _, w := range wts {
+		if w.branch == branch {
+			return w.path, nil
 		}
 	}
 	return "", fmt.Errorf("%w: no worktree has %s checked out; check out %s in a worktree first", exit.Transition,
 		branch, branch)
 }
 
-// Remove deletes a worker's worktree and branch. Without force it refuses to lose uncommitted or unmerged work.
-func (m *Manager) Remove(id int, force bool) (Manifest, error) {
+// Remove deletes a worker's worktree and branch. Without force it refuses to lose uncommitted or unmerged work. An
+// adopted worker is only untracked, its worktree and branch left to the tool that made them, unless purge.
+func (m *Manager) Remove(id int, force, purge bool) (Manifest, error) {
 	mf, err := m.Get(id)
 	if err != nil {
 		return mf, err
@@ -390,9 +574,16 @@ func (m *Manager) Remove(id int, force bool) (Manifest, error) {
 		return mf, fmt.Errorf("%w: worker %s has %d uncommitted change(s) and %d unmerged commit(s); pass --force to drop them",
 			exit.Transition, mf.ID, lv.Dirty, lv.Ahead)
 	}
-	wt := m.Worktree(mf.ID)
+	if mf.External && !purge {
+		if _, err := git(m.root, "worktree", "prune"); err != nil {
+			return mf, err
+		}
+		mf.State, mf.Removed = StateRemoved, m.stamp()
+		return mf, m.write(mf, os.Rename)
+	}
+	wt := m.WorktreePath(mf)
 	args := []string{"worktree", "prune"}
-	if _, err := os.Stat(wt); err == nil {
+	if _, err := os.Stat(wt); wt != "" && err == nil {
 		args = []string{"worktree", "remove", wt}
 		if force {
 			args = []string{"worktree", "remove", "--force", wt}
@@ -421,7 +612,7 @@ func (m *Manager) Prune() (removed, skipped []Manifest, err error) {
 			continue
 		}
 		id, _ := strconv.Atoi(mf.ID)
-		done, err := m.Remove(id, false)
+		done, err := m.Remove(id, false, false)
 		if errors.Is(err, exit.Transition) {
 			skipped = append(skipped, mf)
 			continue

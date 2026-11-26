@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"apex/internal/repo"
 	"apex/internal/worker"
@@ -23,7 +24,7 @@ type workerView struct {
 // workerCmd validates every flag and argument before touching git or the disk, so usage errors always exit 64.
 func workerCmd(dir string, args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return usageErr("worker needs a verb: spawn, list, status, merge, remove or prune")
+		return usageErr("worker needs a verb: spawn, adopt, list, status, merge, remove or prune")
 	}
 	sub, args := args[0], args[1:]
 	if sub == "-h" || sub == "--help" {
@@ -32,19 +33,22 @@ func workerCmd(dir string, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("worker "+sub, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	asJSON := fs.Bool("json", false, "")
-	var base, skill, item, states, message *string
-	var force *bool
+	var base, skill, item, states, message, slug *string
+	var force, purge *bool
 	want := 1
 	switch sub {
 	case "spawn":
 		base, skill, item = fs.String("base", "", ""), fs.String("skill", "", ""), fs.String("item", "", "")
+	case "adopt":
+		base, skill, item = fs.String("base", "", ""), fs.String("skill", "", ""), fs.String("item", "", "")
+		slug = fs.String("slug", "", "")
 	case "list":
 		states, want = fs.String("state", "active,merged", ""), 0
 	case "status":
 	case "merge":
 		message = fs.String("message", "", "")
 	case "remove":
-		force = fs.Bool("force", false, "")
+		force, purge = fs.Bool("force", false, ""), fs.Bool("purge", false, "")
 	case "prune":
 		want = 0
 	default:
@@ -72,6 +76,19 @@ func workerCmd(dir string, args []string, stdout io.Writer) error {
 		if err == nil {
 			err = worker.CheckItem(*item)
 		}
+	case "adopt":
+		if pos[0] == "" || strings.ContainsFunc(pos[0], unicode.IsControl) {
+			return usageErr("adopt needs a worktree path or branch, got %q", pos[0])
+		}
+		if *slug != "" {
+			err = worker.CheckSlug(*slug)
+		}
+		if err == nil {
+			skills, err = worker.ParseSkills(*skill)
+		}
+		if err == nil {
+			err = worker.CheckItem(*item)
+		}
 	case "list":
 		show, err = parseWorkerStates(*states)
 	case "status", "merge", "remove":
@@ -87,7 +104,7 @@ func workerCmd(dir string, args []string, stdout io.Writer) error {
 	}
 	m := worker.New(root)
 	view := func(mf worker.Manifest) (workerView, error) {
-		v := workerView{Manifest: mf, Worktree: m.Worktree(mf.ID)}
+		v := workerView{Manifest: mf, Worktree: m.WorktreePath(mf)}
 		if mf.State != worker.StateRemoved {
 			lv, err := m.Live(mf)
 			if err != nil {
@@ -104,9 +121,23 @@ func workerCmd(dir string, args []string, stdout io.Writer) error {
 			return err
 		}
 		if *asJSON {
-			return printJSON(stdout, workerView{Manifest: mf, Worktree: m.Worktree(mf.ID)})
+			return printJSON(stdout, workerView{Manifest: mf, Worktree: m.WorktreePath(mf)})
 		}
 		fmt.Fprintf(stdout, "id: %s\nworktree: %s\nbranch: %s\nbase: %s\n", mf.ID, m.Worktree(mf.ID), mf.Branch, mf.Base)
+		return nil
+	case "adopt":
+		mf, err := m.Adopt(dir, pos[0], *slug, *base, skills, *item)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return printJSON(stdout, workerView{Manifest: mf, Worktree: m.WorktreePath(mf)})
+		}
+		wt := m.WorktreePath(mf)
+		if wt == "" {
+			wt = "(branch only)"
+		}
+		fmt.Fprintf(stdout, "id: %s\nworktree: %s\nbranch: %s\nbase: %s\n", mf.ID, wt, mf.Branch, mf.Base)
 		return nil
 	case "list":
 		all, err := m.List()
@@ -159,17 +190,17 @@ func workerCmd(dir string, args []string, stdout io.Writer) error {
 			return err
 		}
 		if *asJSON {
-			return printJSON(stdout, workerView{Manifest: mf, Worktree: m.Worktree(mf.ID)})
+			return printJSON(stdout, workerView{Manifest: mf, Worktree: m.WorktreePath(mf)})
 		}
 		fmt.Fprintf(stdout, "merged %s into %s at %s\n", mf.ID, mf.Base, mf.MergedSHA)
 		return nil
 	case "remove":
-		mf, err := m.Remove(id, *force)
+		mf, err := m.Remove(id, *force, *purge)
 		if err != nil {
 			return err
 		}
 		if *asJSON {
-			return printJSON(stdout, workerView{Manifest: mf, Worktree: m.Worktree(mf.ID)})
+			return printJSON(stdout, workerView{Manifest: mf, Worktree: m.WorktreePath(mf)})
 		}
 		fmt.Fprintf(stdout, "removed %s\n", mf.ID)
 		return nil

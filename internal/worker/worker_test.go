@@ -110,7 +110,7 @@ func TestLifecycle(t *testing.T) {
 	if _, err := m.Merge(1, ""); !errors.Is(err, exit.Transition) {
 		t.Fatalf("merge of dirty worker: err = %v, want Transition", err)
 	}
-	if _, err := m.Remove(1, false); !errors.Is(err, exit.Transition) {
+	if _, err := m.Remove(1, false, false); !errors.Is(err, exit.Transition) {
 		t.Fatalf("remove of dirty worker: err = %v, want Transition", err)
 	}
 	os.Remove(filepath.Join(wt, "scratch"))
@@ -150,13 +150,13 @@ func TestLifecycle(t *testing.T) {
 	if got, _ := m.Get(1); got.State != StateRemoved || got.Removed == "" {
 		t.Fatalf("after prune %+v", got)
 	}
-	if _, err := m.Remove(1, false); !errors.Is(err, exit.Transition) {
+	if _, err := m.Remove(1, false, false); !errors.Is(err, exit.Transition) {
 		t.Fatalf("remove twice: err = %v, want Transition", err)
 	}
-	if _, err := m.Remove(2, false); !errors.Is(err, exit.Transition) {
+	if _, err := m.Remove(2, false, false); !errors.Is(err, exit.Transition) {
 		t.Fatalf("remove unmerged: err = %v, want Transition", err)
 	}
-	if got, err := m.Remove(2, true); err != nil || got.State != StateRemoved {
+	if got, err := m.Remove(2, true, false); err != nil || got.State != StateRemoved {
 		t.Fatalf("force remove = %+v, %v", got, err)
 	}
 	if out := run(t, root, "branch", "--list", "apex/*"); out != "" {
@@ -232,11 +232,13 @@ func TestCorruptManifest(t *testing.T) {
 	path := filepath.Join(m.dir, "001.json")
 	good, _ := os.ReadFile(path)
 	for name, data := range map[string]string{
-		"bad json":      "{",
-		"unknown field": strings.Replace(string(good), `"id"`, `"bogus": 1, "id"`, 1),
-		"id mismatch":   strings.Replace(string(good), `"id": "001"`, `"id": "002"`, 1),
-		"bad state":     strings.Replace(string(good), `"active"`, `"zombie"`, 1),
-		"bad branch":    strings.Replace(string(good), `"apex/001-x"`, `"main"`, 1),
+		"bad json":              "{",
+		"unknown field":         strings.Replace(string(good), `"id"`, `"bogus": 1, "id"`, 1),
+		"id mismatch":           strings.Replace(string(good), `"id": "001"`, `"id": "002"`, 1),
+		"bad state":             strings.Replace(string(good), `"active"`, `"zombie"`, 1),
+		"bad branch":            strings.Replace(string(good), `"apex/001-x"`, `"main"`, 1),
+		"spawned with worktree": strings.Replace(string(good), `"id"`, `"worktree": "x", "id"`, 1),
+		"external bad branch":   strings.Replace(string(good), `"apex/001-x"`, `"a..b", "external": true`, 1),
 	} {
 		write(t, path, data)
 		if _, err := m.List(); !errors.Is(err, exit.Corrupt) {
@@ -245,5 +247,124 @@ func TestCorruptManifest(t *testing.T) {
 	}
 	if _, err := m.Get(9); !errors.Is(err, exit.NotFound) {
 		t.Errorf("missing: err = %v, want NotFound", err)
+	}
+}
+
+func exists(t *testing.T, root, path, branch string) bool {
+	t.Helper()
+	_, err := os.Stat(path)
+	return err == nil && run(t, root, "branch", "--list", branch) != ""
+}
+
+// Adopted workers track worktrees and branches apex did not make: merge works, remove and prune only untrack, purge
+// deletes.
+func TestAdopt(t *testing.T) {
+	root, m := newRepo(t)
+	ext, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	feat := filepath.Join(ext, "feat")
+	run(t, root, "worktree", "add", "-q", "-b", "t3/Feat_X", feat)
+
+	mf, err := m.Adopt(root, feat, "", "", []string{"go"}, "orch/7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mf.ID != "001" || !mf.External || mf.Branch != "t3/Feat_X" || mf.Slug != "feat-x" || mf.Base != "main" ||
+		!samePath(canon(m.WorktreePath(mf)), canon(feat)) || mf.BaseSHA != run(t, root, "rev-parse", "main") {
+		t.Fatalf("adopted %+v", mf)
+	}
+	if got, err := m.Get(1); err != nil || got.Worktree != mf.Worktree {
+		t.Fatalf("Get = %+v, %v", got, err)
+	}
+	if _, err := m.Adopt(root, "refs/heads/t3/Feat_X", "again", "", nil, ""); !errors.Is(err, exit.Transition) {
+		t.Fatalf("duplicate adopt: err = %v, want Transition", err)
+	}
+	commit(t, feat, "b.txt", "feat\n")
+	if lv, err := m.Live(mf); err != nil || lv.Worktree != "ok" || lv.Ahead != 1 {
+		t.Fatalf("live = %+v, %v", lv, err)
+	}
+	if mf, err = m.Merge(1, ""); err != nil || mf.State != StateMerged {
+		t.Fatalf("merge = %+v, %v", mf, err)
+	}
+	if removed, _, err := m.Prune(); err != nil || len(removed) != 1 {
+		t.Fatalf("prune = %v, %v", removed, err)
+	}
+	if !exists(t, root, feat, "t3/Feat_X") {
+		t.Fatal("prune deleted the adopted worktree or branch")
+	}
+
+	// Branch only: no worktree has it checked out.
+	solo := filepath.Join(ext, "solo")
+	run(t, root, "worktree", "add", "-q", "-b", "t3/solo", solo)
+	commit(t, solo, "c.txt", "solo\n")
+	run(t, root, "worktree", "remove", solo)
+	mf, err = m.Adopt(root, "t3/solo", "", "main", nil, "")
+	if err != nil || mf.Worktree != "" || m.WorktreePath(mf) != "" {
+		t.Fatalf("branch adopt = %+v, %v", mf, err)
+	}
+	if lv, err := m.Live(mf); err != nil || lv.Worktree != "branch" || lv.Head == "" || lv.Ahead != 1 {
+		t.Fatalf("branch live = %+v, %v", lv, err)
+	}
+	if _, err := m.Merge(2, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Remove(2, false, true); err != nil || run(t, root, "branch", "--list", "t3/solo") != "" {
+		t.Fatalf("purge branch: %v", err)
+	}
+
+	// Purge of an adopted worktree deletes it and its branch; plain remove leaves them.
+	keep := filepath.Join(ext, "keep")
+	run(t, root, "worktree", "add", "-q", "-b", "t3/keep", keep)
+	if _, err := m.Adopt(root, "t3/keep", "", "", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Remove(3, false, false); err != nil || !exists(t, root, keep, "t3/keep") {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := m.Adopt(root, keep, "", "", nil, ""); err != nil { // untracked branches can be adopted again
+		t.Fatal(err)
+	}
+	commit(t, keep, "d.txt", "keep\n")
+	if _, err := m.Remove(4, false, true); !errors.Is(err, exit.Transition) {
+		t.Fatalf("purge unmerged: err = %v, want Transition", err)
+	}
+	if _, err := m.Remove(4, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(keep); !os.IsNotExist(err) || run(t, root, "branch", "--list", "t3/keep") != "" {
+		t.Fatalf("purge left worktree or branch: %v", err)
+	}
+}
+
+func TestAdoptRefusals(t *testing.T) {
+	root, m := newRepo(t)
+	ext, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(t, root, "branch", "dev")
+	run(t, root, "worktree", "add", "-q", "--detach", filepath.Join(ext, "det"))
+	for _, c := range []struct {
+		target, slug, base string
+		want               error
+	}{
+		{root, "", "", exit.Transition},                      // main checkout by path
+		{"main", "", "", exit.Transition},                    // main checkout by branch
+		{"dev", "", "dev", exit.Transition},                  // base branch
+		{filepath.Join(ext, "det"), "", "", exit.Transition}, // detached
+		{"nope", "", "", exit.NotFound},                      // unknown
+		{"dev", "", "nope", exit.NotFound},                   // unknown base
+		{"", "", "", exit.Usage},                             // empty target
+		{"dev", "Bad", "", exit.Usage},                       // bad slug
+		{"dev\n", "", "", exit.Usage},                        // control char
+	} {
+		if _, err := m.Adopt(root, c.target, c.slug, c.base, nil, ""); !errors.Is(err, c.want) {
+			t.Errorf("Adopt(%q, %q, %q): err = %v, want %v", c.target, c.slug, c.base, err, c.want)
+		}
+	}
+	if all, err := m.List(); err != nil || len(all) != 0 {
+		t.Fatalf("manifests after refusals: %v, %v", all, err)
 	}
 }
