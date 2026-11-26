@@ -61,6 +61,3 @@ each commit: short SHA and subject; the files touched>
 ## Blockers
 <what stopped you, or none>
 ```
-
-`apex worker report` applies to workers spawned by `apex worker spawn`. A worker its parent registers with
-`apex worker adopt` returns this structured report directly as its final message.
