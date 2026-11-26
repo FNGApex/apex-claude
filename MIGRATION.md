@@ -1,9 +1,95 @@
-# Migration: per-Agent folders
+# Migration
+
+Two independent migrations, newest first. Part 1 moves a repo from the legacy `.claude/` layout to `.apex/`,
+`.agents/skills/` and `AGENTS.md`. Part 2 moves each legacy Agent's notes into a private folder; it applies only to
+repos that still run Agents under `.claude/`.
+
+## Part 1: Legacy `.claude/` layout to `.apex/` + `.agents/skills/` + `AGENTS.md`
+
+Moves the repo's Apex state out of `.claude/` so any harness can find it, and lets you add an Orchestrator next to
+your Agents or in place of them. `/apex-init` detects the legacy layout and offers to do all of this; the steps below
+are what it does, for doing it by hand.
+
+### Before and after
+
+```
+before                                    after
+<repo>/.claude/                           <repo>/
+  LIVE.md                                   .apex/LIVE.md              shared notes
+  git.md                                    .apex/git.md               git conventions
+  (none)                                    .apex/tiers.md             new: tier to model map
+  ledger/<agent>/NNN.md                     .apex/ledger/NNN.md        one ledger, see step 3
+  ledger/<agent>/handoff.md                 .apex/orchestrator/        the Orchestrator's handoff and notes
+  skills/<agent>/SKILL.md                   .agents/skills/<agent>/    role cards, if you keep the Agents
+  skills/<other>/                           .agents/skills/<other>/    project skills
+  (none)                                    .agents/skills/orchestrator/   new: the Orchestrator's role card
+  (none)                                    AGENTS.md                  new: points the harness at all of it
+```
+
+### Choose
+
+| You want | Do |
+|---|---|
+| Keep Collaboration Agents as they are | nothing is required: the `apex` CLI reads either layout, and `apex where` says which. Move at your own pace |
+| Add an Orchestrator beside the Agents | do steps 1, 2, 4 and 5; leave the Agents' ledgers and role cards in `.claude/` until they are done |
+| Replace the Agents with an Orchestrator | do all steps; close or hand over each Agent's open items first (step 3) |
+
+### Steps
+
+Run in the main checkout, on a clean tree.
+
+1. Install the current `apex` and skills (`make install-orchestration`), so `apex where`, `apex worker` and
+   `apex skill` exist.
+
+2. Move the shared files, keeping history:
+
+   ```bash
+   mkdir -p .apex .agents/skills
+   git mv .claude/LIVE.md .apex/LIVE.md
+   git mv .claude/git.md .apex/git.md
+   ```
+
+   Create `.apex/tiers.md` from the template in `skills/apex-init/templates/tiers.md` and map the tiers you use. A blank
+   tier runs on the session's own model.
+
+3. Bring the open ledger items over. Closed items are history: leave them in `.claude/ledger/<agent>/`, or move that
+   folder under `.apex/ledger/archive/<agent>/`. Ids are per ledger, so file each open item again rather than copying
+   its file:
+
+   ```bash
+   apex list --agent <a> --status in-progress,open
+   apex add task "<title>"          # once per open item, in the new ledger; copy the body by hand
+   ```
+
+   Close the old item with a reason that names the new id: `apex close <id> "moved to .apex/ledger/NNN"`.
+
+4. Move project skills (`.claude/skills/<other>/`, not role cards) with `git mv` to `.agents/skills/<other>/`. Role
+   cards of Agents you keep move with them only after you have checked that your harness loads `.agents/skills/`;
+   until then leave them.
+
+5. Adopt the Orchestrator: run `/apex-init`, which writes `.agents/skills/orchestrator/SKILL.md`, `.apex/orchestrator/`
+   and `AGENTS.md`. If the repo has a `CLAUDE.md` that lists the Agents, keep it and add one line pointing at
+   `AGENTS.md`.
+
+6. Check:
+
+   ```bash
+   apex where                         # prints the .apex layout
+   apex skill check                   # every skill valid
+   apex list                          # the items you brought over
+   git status --porcelain             # only the moves you made
+   ```
+
+7. Commit per `git-discipline`.
+
+Workers need nothing migrated: the Orchestrator spawns them (`apex worker spawn`) into temporary worktrees.
+
+## Part 2: Legacy per-Agent private folders (legacy .claude/ layout)
 
 Moves each Agent's notes out of its tracked role card folder into a private folder in the main checkout, and splits
 them into three kinds: live notes, rules and reminder skills.
 
-## Before and after
+### Before and after
 
 ```
 before                                    after
@@ -22,7 +108,7 @@ before                                    after
 is ever staged, and the repo's root `.gitignore` is not touched. It lives only in the main checkout; an Agent in a
 worktree reads it through `<repo>`, as it already does for the ledger.
 
-## What goes where
+### What goes where
 
 | File | Holds | Written by | Form |
 |---|---|---|---|
@@ -34,7 +120,7 @@ A reminder skill is not an Agent: it never changes the role, the owned paths or 
 to do and what to watch for in one topic. These files are plain markdown that the Agent reads with a file read. They
 are not Claude Code skills and are never discovered or invoked as `/<name>`.
 
-### RULES.md
+#### RULES.md
 
 Rules are decided by the operator. Each one:
 
@@ -56,7 +142,7 @@ Rules are decided by the operator. Each one:
 
 Rewrite a rule in place when the operator changes it; delete it when the operator withdraws it.
 
-### Reminder skills
+#### Reminder skills
 
 ```markdown
 # Install
@@ -67,7 +153,7 @@ Rewrite a rule in place when the operator changes it; delete it when the operato
 - Good to know: `pwsh` is not installed on this machine; PowerShell edits are read-checked only.
 ```
 
-## Steps, per Agent
+### Steps, per Agent
 
 Run in the main checkout. `<a>` is the Agent's directory name under `.claude/skills/`.
 
@@ -117,7 +203,7 @@ Run in the main checkout. `<a>` is the Agent's directory name under `.claude/ski
 
 `.claude/LIVE.md`, the ledger, the handoff and `.claude/git.md` do not move.
 
-## Protocol changes that ship with this
+### Protocol changes that ship with this
 
 The repo's skills and design need the following changes before a migrated Agent starts. They are separate ledger
 items, not migration steps.
