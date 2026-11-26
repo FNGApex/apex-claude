@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -324,6 +325,9 @@ func TestAddFailsOnUnlistedNameCollision(t *testing.T) {
 
 // Items are shared files; the temp-file write path must not leave them owner-only.
 func TestWritesAreWorldReadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports every writable file as 0666")
+	}
 	l := newLedger(t, "dev")
 	_, path, err := l.Add("task", "x")
 	if err != nil {
@@ -356,5 +360,60 @@ func TestRetitle(t *testing.T) {
 	}
 	if err := l.Retitle(9, "x"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("missing item: err = %v, want ErrNotFound", err)
+	}
+}
+
+// An Orchestrator's ledger may hold several items in progress; the marker lifts the one-at-a-time rule and nothing else.
+func TestConcurrentLedger(t *testing.T) {
+	l := newLedger(t, "orch")
+	a, b, c := mustAdd(t, l, "a"), mustAdd(t, l, "b"), mustAdd(t, l, "c")
+	if err := os.WriteFile(filepath.Join(l.dir, ConcurrentMarker), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !l.Concurrent() {
+		t.Fatal("Concurrent() = false with the marker present")
+	}
+	for _, id := range []int{a.ID, b.ID} {
+		if err := l.Start(id); err != nil {
+			t.Fatalf("start %d: %v", id, err)
+		}
+	}
+	if err := l.Start(a.ID); !errors.Is(err, ErrTransition) {
+		t.Fatalf("start in-progress: err = %v, want ErrTransition", err)
+	}
+	if err := l.Start(99); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("start missing: err = %v, want ErrNotFound", err)
+	}
+	items, err := l.List()
+	if err != nil || len(items) != 3 || items[2].ID != c.ID {
+		t.Fatalf("List = %+v, %v; want a, b in progress then c", items, err)
+	}
+	if err := os.Remove(filepath.Join(l.dir, ConcurrentMarker)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.List(); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("two in progress without the marker: err = %v, want ErrCorrupt", err)
+	}
+}
+
+// A skill on the apex layout puts the ledger under .apex/; one split across both layouts is refused.
+func TestOpenApexLayout(t *testing.T) {
+	root := t.TempDir()
+	skill := filepath.Join(root, ".agents", "skills", "dev")
+	if err := os.MkdirAll(skill, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("---\nname: dev\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Open(root, "dev")
+	if err != nil || l.Dir() != filepath.Join(root, ".apex", "ledger", "dev") {
+		t.Fatalf("Open = %v, %v", l, err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".claude", "ledger", "dev"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(root, "dev"); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("split ledger: err = %v, want ErrCorrupt", err)
 	}
 }

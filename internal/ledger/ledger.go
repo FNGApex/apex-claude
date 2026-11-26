@@ -1,5 +1,6 @@
-// Package ledger stores an Agent's work items: one numbered markdown file per item under
-// <main>/.claude/ledger/<agent>/. The binary owns each item's frontmatter; the model owns its body.
+// Package ledger stores an Agent's work items: one numbered markdown file per item under <main>/<state>/ledger/<agent>/,
+// where <state> is .apex or, on the legacy layout, .claude. The binary owns each item's frontmatter; the model owns its
+// body.
 package ledger
 
 import (
@@ -14,13 +15,17 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"apex/internal/exit"
+	"apex/internal/layout"
+	"apex/internal/store"
 )
 
 var (
-	ErrUsage      = errors.New("usage")
-	ErrNotFound   = errors.New("not found")
-	ErrTransition = errors.New("illegal transition")
-	ErrCorrupt    = errors.New("corrupt ledger")
+	ErrUsage      = exit.Usage
+	ErrNotFound   = exit.NotFound
+	ErrTransition = exit.Transition
+	ErrCorrupt    = exit.Corrupt
 )
 
 const (
@@ -35,7 +40,6 @@ var (
 
 	agentRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	idRe    = regexp.MustCompile(`^[0-9]+$`)
-	fileRe  = regexp.MustCompile(`^([0-9]+)\.md$`)
 )
 
 type Item struct {
@@ -198,19 +202,17 @@ type Ledger struct {
 	now func() time.Time
 }
 
-// Open returns the ledger of agent in the main checkout root. The agent must exist as a skill.
+// Open returns the ledger of agent in the main checkout root, on the layout its skill lives in. The agent must exist as
+// a skill.
 func Open(root, agent string) (*Ledger, error) {
 	if err := CheckAgent(agent); err != nil {
 		return nil, err
 	}
-	skill := filepath.Join(root, ".claude", "skills", agent, "SKILL.md")
-	if _, err := os.Stat(skill); err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: no agent %q (missing %s)", ErrNotFound, agent, skill)
-		}
+	lay, err := layout.ForAgent(root, agent)
+	if err != nil {
 		return nil, err
 	}
-	return &Ledger{dir: filepath.Join(root, ".claude", "ledger", agent), now: time.Now}, nil
+	return &Ledger{dir: lay.Ledger(root, agent), now: time.Now}, nil
 }
 
 // PerTicketMarker is the file in an Agent's ledger directory that switches it from one mono ledger to one ledger per
@@ -223,6 +225,16 @@ func (l *Ledger) PerTicket() bool {
 	return err == nil
 }
 
+// ConcurrentMarker is the file in an Agent's ledger directory that lets several items be in progress at once, for an
+// Orchestrator that runs workers in parallel.
+const ConcurrentMarker = "concurrent"
+
+// Concurrent reports whether the Agent may have more than one item in progress.
+func (l *Ledger) Concurrent() bool {
+	_, err := os.Stat(filepath.Join(l.dir, ConcurrentMarker))
+	return err == nil
+}
+
 // ForTicket returns the ledger of one ticket, kept in its own subdirectory of l.
 func (l *Ledger) ForTicket(ticket string) (*Ledger, error) {
 	if ticket == "" || filepath.Base(ticket) != ticket || strings.HasPrefix(ticket, ".") {
@@ -231,7 +243,7 @@ func (l *Ledger) ForTicket(ticket string) (*Ledger, error) {
 	return &Ledger{dir: filepath.Join(l.dir, ticket), now: l.now}, nil
 }
 
-func itemName(id int) string { return fmt.Sprintf("%03d.md", id) }
+func itemName(id int) string { return store.Name(id, ".md") }
 
 // Dir is the directory holding the ledger's items and its handoff.
 func (l *Ledger) Dir() string { return l.dir }
@@ -278,29 +290,7 @@ func (l *Ledger) Add(kind, title string) (Item, string, error) {
 
 func (l *Ledger) today() string { return l.now().Format("2006-01-02") }
 
-func (l *Ledger) ids() ([]int, error) {
-	entries, err := os.ReadDir(l.dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var ids []int
-	for _, e := range entries {
-		m := fileRe.FindStringSubmatch(e.Name())
-		if m == nil {
-			continue
-		}
-		n, err := strconv.Atoi(m[1])
-		if err != nil || n == 0 || e.Name() != itemName(n) {
-			return nil, fmt.Errorf("%w: %s is not a canonical item name", ErrCorrupt, e.Name())
-		}
-		ids = append(ids, n)
-	}
-	sort.Ints(ids)
-	return ids, nil
-}
+func (l *Ledger) ids() ([]int, error) { return store.IDs(l.dir, ".md") }
 
 func (l *Ledger) Get(id int) (Item, error) {
 	data, err := os.ReadFile(l.Path(id))
@@ -320,8 +310,9 @@ func (l *Ledger) Get(id int) (Item, error) {
 	return it, nil
 }
 
-// List returns every item, in-progress first, then by id. It fails on any corrupt item or on more than one item in
-// progress, so a broken ledger is noticed on the next read instead of silently skipped.
+// List returns every item, in-progress first, then by id. It fails on any corrupt item or, unless the ledger is
+// concurrent, on more than one item in progress, so a broken ledger is noticed on the next read instead of silently
+// skipped.
 func (l *Ledger) List() ([]Item, error) {
 	ids, err := l.ids()
 	if err != nil {
@@ -339,7 +330,7 @@ func (l *Ledger) List() ([]Item, error) {
 		}
 		items = append(items, it)
 	}
-	if active > 1 {
+	if active > 1 && !l.Concurrent() {
 		return nil, fmt.Errorf("%w: %d items in progress", ErrCorrupt, active)
 	}
 	sort.SliceStable(items, func(i, j int) bool {
@@ -348,18 +339,19 @@ func (l *Ledger) List() ([]Item, error) {
 	return items, nil
 }
 
-// Start moves an open item to in-progress; the Agent may have only one.
+// Start moves an open item to in-progress; the Agent may have only one unless its ledger is concurrent.
 // ponytail: two sessions of one Agent can race past this check; add a lock file if that happens.
 func (l *Ledger) Start(id int) error {
 	items, err := l.List()
 	if err != nil {
 		return err
 	}
+	concurrent := l.Concurrent()
 	var it *Item
 	for i := range items {
 		if items[i].ID == id {
 			it = &items[i]
-		} else if items[i].Status == StatusInProgress {
+		} else if items[i].Status == StatusInProgress && !concurrent {
 			return fmt.Errorf("%w: %03d is already in progress", ErrTransition, items[i].ID)
 		}
 	}
@@ -414,26 +406,8 @@ func (l *Ledger) Retitle(id int, title string) error {
 	return l.writeAtomic(it, os.Rename)
 }
 
-// writeAtomic writes the item to a synced temp file, then places it with place (os.Link to create, os.Rename to
-// replace), so readers and crashes never see a partial item.
+// writeAtomic places the item with place (os.Link to create, os.Rename to replace), so readers and crashes never see a
+// partial item.
 func (l *Ledger) writeAtomic(it Item, place func(oldpath, newpath string) error) error {
-	tmp, err := os.CreateTemp(l.dir, ".tmp-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	_, err = tmp.Write(it.render())
-	if err == nil {
-		err = tmp.Chmod(0o644)
-	}
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		return err
-	}
-	return place(tmp.Name(), l.Path(it.ID))
+	return store.Write(l.dir, itemName(it.ID), it.render(), place)
 }
