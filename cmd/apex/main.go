@@ -37,10 +37,13 @@ usage: apex where [--agent <name>] [--json]
 
 usage: apex worker <verb> [args] [--json]
   spawn <slug> [--base b] [--skill a,b] [--item ref]   new worktree on branch apex/<id>-<slug> under .apex/workers/
+  adopt <worktree|branch> [--slug s] [--base b] [--skill a,b] [--item ref]
+                                                        track an existing worktree or local branch as an external worker
   list [--state s,s|all]                                default state: active,merged; shows live git state
   status <id>                                           one worker
   merge <id> [--message m]                              merge a clean worker into its base, where base is checked out
-  remove <id> [--force]                                 drop worktree and branch; --force drops unmerged work
+  remove <id> [--force] [--purge]                       drop worktree and branch; --force drops unmerged work;
+                                                        an adopted worker is only untracked unless --purge
   prune                                                 remove every merged worker with nothing unmerged
 
 usage: apex skill <verb> [args] [--json]

@@ -103,11 +103,11 @@ func ForRepo(root string) Layout {
 
 type Root struct {
 	Path   string
-	Source string // repo | repo-claude | env | user | user-claude | user-codex
+	Source string // repo | repo-claude | env | user | user-claude | user-codex | user-gemini
 }
 
 // Sources are the Root.Source values, in precedence order.
-var Sources = []string{"repo", "repo-claude", "env", "user", "user-claude", "user-codex"}
+var Sources = []string{"repo", "repo-claude", "env", "user", "user-claude", "user-codex", "user-gemini"}
 
 // SkillRoots lists every place skills are discovered, highest precedence first.
 func SkillRoots(root string) []Root {
@@ -134,6 +134,7 @@ func SkillRoots(root string) []Root {
 		{under("", ".agents", "skills"), "user"},
 		{under("CLAUDE_CONFIG_DIR", ".claude", "skills"), "user-claude"},
 		{under("CODEX_HOME", ".codex", "skills"), "user-codex"},
+		{under("GEMINI_CONFIG_DIR", ".gemini", "config", "skills"), "user-gemini"},
 	} {
 		if r.Path != "" {
 			roots = append(roots, r)

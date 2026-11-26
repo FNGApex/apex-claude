@@ -294,6 +294,9 @@ func TestWorkerAndSkillUsage(t *testing.T) {
 		{"worker", "spawn", "ok", "--skill", "a,,b"}, {"worker", "spawn", "ok", "--item", "../1"},
 		{"worker", "list", "--state", "zombie"}, {"worker", "status", "abc"}, {"worker", "merge", "0"},
 		{"worker", "remove", "1", "2"}, {"worker", "prune", "x"},
+		{"worker", "adopt"}, {"worker", "adopt", "a", "b"}, {"worker", "adopt", ""}, {"worker", "adopt", "x\ty"},
+		{"worker", "adopt", "t3/x", "--slug", "Bad"}, {"worker", "adopt", "t3/x", "--skill", "a,,b"},
+		{"worker", "adopt", "t3/x", "--item", "../1"}, {"worker", "remove", "1", "--purge=maybe"},
 		{"skill"}, {"skill", "frob"}, {"skill", "search"}, {"skill", "show"}, {"skill", "list", "--kind", "wizard"},
 		{"skill", "list", "--source", "web"}, {"skill", "search", "x", "--limit", "0"}, {"skill", "check", "a", "b"},
 	} {
@@ -402,5 +405,95 @@ func TestSkillVerbs(t *testing.T) {
 	}
 	if _, out, _ := apex(t, root, "skill", "show", "long-desc"); !strings.Contains(out, longDesc) {
 		t.Fatalf("show must keep full description:\n%s", out)
+	}
+}
+
+func TestWorkerAdopt(t *testing.T) {
+	for k, v := range map[string]string{"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"} {
+		t.Setenv(k, v)
+	}
+	root := setup(t)
+	ext, err := filepath.EvalSymlinks(t.TempDir()) // stands in for ~/.t3/worktrees/...
+	if err != nil {
+		t.Fatal(err)
+	}
+	git := func(dir string, args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git(root, "init", "-q", "-b", "main")
+	git(root, "config", "core.autocrlf", "false")
+	os.WriteFile(filepath.Join(root, "a.txt"), []byte("one\n"), 0o644)
+	git(root, "add", "a.txt")
+	git(root, "commit", "-q", "-m", "init")
+	feat := filepath.Join(ext, "feat")
+	git(root, "worktree", "add", "-q", "-b", "t3/feat-x", feat)
+	git(root, "worktree", "add", "-q", "--detach", filepath.Join(ext, "det"))
+	git(root, "branch", "t3/solo")
+
+	for _, c := range []struct {
+		args []string
+		code int
+	}{
+		{[]string{root}, 3}, {[]string{"main"}, 3}, {[]string{filepath.Join(ext, "det")}, 3}, {[]string{"nope"}, 1},
+		{[]string{"t3/solo", "--base", "t3/solo"}, 3},
+	} {
+		if code, _, errs := apex(t, root, append([]string{"worker", "adopt"}, c.args...)...); code != c.code {
+			t.Errorf("adopt %q: exit %d, want %d (%s)", c.args, code, c.code, strings.TrimSpace(errs))
+		}
+	}
+
+	code, out, errs := apex(t, root, "worker", "adopt", feat, "--skill", "go", "--item", "7", "--json")
+	if code != 0 {
+		t.Fatalf("adopt: exit %d: %s", code, errs)
+	}
+	var v struct {
+		ID, Slug, Branch, Worktree string
+		External                   bool
+	}
+	if err := json.Unmarshal([]byte(out), &v); err != nil || v.ID != "001" || v.Branch != "t3/feat-x" ||
+		v.Slug != "feat-x" || !v.External || !strings.EqualFold(filepath.Clean(v.Worktree), feat) {
+		t.Fatalf("adopt json %v:\n%s", err, out)
+	}
+	if code, _, _ := apex(t, root, "worker", "adopt", "t3/feat-x"); code != 3 {
+		t.Fatalf("duplicate adopt: exit %d, want 3", code)
+	}
+	if code, out, _ := apex(t, root, "worker", "adopt", "t3/solo"); code != 0 || !strings.Contains(out, "worktree: (branch only)") {
+		t.Fatalf("branch adopt: exit %d\n%s", code, out)
+	}
+	if _, out, _ := apex(t, root, "worker", "status", "2"); !strings.Contains(out, "live: branch") {
+		t.Fatalf("branch status:\n%s", out)
+	}
+
+	os.WriteFile(filepath.Join(feat, "b.txt"), []byte("feat\n"), 0o644)
+	git(feat, "add", "b.txt")
+	git(feat, "commit", "-q", "-m", "feat")
+	if code, _, errs := apex(t, root, "worker", "merge", "1"); code != 0 {
+		t.Fatalf("merge: exit %d: %s", code, errs)
+	}
+	if _, err := os.Stat(filepath.Join(root, "b.txt")); err != nil {
+		t.Fatalf("merge did not land on main: %v", err)
+	}
+	if code, out, _ := apex(t, root, "worker", "prune"); code != 0 || !strings.Contains(out, "removed 001") {
+		t.Fatalf("prune: exit %d\n%s", code, out)
+	}
+	if _, err := os.Stat(feat); err != nil || git(root, "branch", "--list", "t3/feat-x") == "" {
+		t.Fatalf("prune deleted the adopted worktree or branch: %v", err)
+	}
+	if code, _, _ := apex(t, root, "worker", "remove", "2"); code != 0 || git(root, "branch", "--list", "t3/solo") == "" {
+		t.Fatalf("remove: exit %d or branch deleted", code)
+	}
+	if code, _, errs := apex(t, root, "worker", "adopt", "t3/feat-x"); code != 0 {
+		t.Fatalf("re-adopt: exit %d: %s", code, errs)
+	}
+	if code, _, errs := apex(t, root, "worker", "remove", "3", "--purge"); code != 0 {
+		t.Fatalf("purge: exit %d: %s", code, errs)
+	}
+	if _, err := os.Stat(feat); !os.IsNotExist(err) || git(root, "branch", "--list", "t3/feat-x") != "" {
+		t.Fatalf("purge left worktree or branch: %v", err)
 	}
 }
