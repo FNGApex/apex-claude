@@ -31,7 +31,7 @@ make uninstall
 
 On Windows, without `make` (PowerShell 5.1 or 7+): `pwsh scripts/install.ps1`. On Linux and macOS, without `make`:
 `scripts/install.sh`. Key flags include `--workflow` (`orchestration|multi-agent|both`), `--harness`
-(`agents|claude|codex|custom`), `--skills-dir`, `--prefix`, `--config-dir`, `--with-output-style`,
+(`agents|claude|codex|gemini|t3|custom`), `--skills-dir`, `--prefix`, `--config-dir`, `--with-output-style`,
 `--with-claude-mods`, `--check-ponytail`, `--custom` / `--interactive`, `--yes`, `--check`, and `--bin`
 (`-Workflow`, `-Harness`, etc. in PowerShell; pass `--help` / `-Help` for the full list).
 
@@ -42,11 +42,23 @@ On Windows, without `make` (PowerShell 5.1 or 7+): `pwsh scripts/install.ps1`. O
 | `agents` | the shared `.agents/skills/` convention that most harnesses read |
 | `claude` | the Claude Code config directory, with its extras (below) |
 | `codex` | the Codex skills directory |
+| `gemini` | the Gemini / Antigravity skills directory, `~/.gemini/config/skills` |
+| `t3` | T3 Code, a multi-provider harness: one run installs into `agents`, `claude`, `codex` and `gemini` |
 | `custom` | a directory you name |
 
 The installer never overwrites or removes a skill folder it did not install; it marks its own. `apex` must be on the
 `PATH` of the shell your harness runs commands in, since every skill calls a bare `apex`. Restart the harness after
-installing.
+installing. Upgrading an older install, or switching workflow or harness: see [MIGRATION.md](MIGRATION.md), Part 3.
+
+### T3 Code harness
+
+T3 Code routes each delegate to one of several providers and creates child worktrees itself. Two things tie it in:
+
+- **Tier routing.** `.apex/tiers.md` maps each capability tier to a T3 Code provider and model id (the T3 Code
+  harness lists them with `orchestrator_capabilities`), so `audit` can run on a different provider than `deep`.
+- **Worktrees.** The Orchestrator delegates with the T3 Code harness's `isolation: "worktree"`, then registers the
+  child's worktree or branch with `apex worker adopt`. From there `apex worker merge` and `apex worker prune` work as
+  for a spawned worker.
 
 ### Claude Code extras
 
@@ -57,7 +69,9 @@ Optional, and only for Claude Code:
 - `output-styles/apex.md`: the `reply-style` skill as a Claude Code output style. Pick it with `/output-style Apex`.
 - `ponytail`: an optional plugin for the `lean` lens of `/pr-review`. Without it the lens walks its own checklist.
 
-Then adopt the protocol in a repo with one session that runs `/apex-init`.
+Then adopt the protocol in a repo with one session that runs `/apex-init`. A repo that already holds prompts,
+personas, task lists, harness memory or a paned Multi-Agent Collaboration setup is moved over by
+[MIGRATION.md](MIGRATION.md).
 
 ## Repository layout
 
@@ -81,7 +95,9 @@ An adopted repo holds its state under `.apex/` and its skills under `.agents/ski
 ### Legacy `.claude/` layout
 
 Repos adopted before this layout keep everything under `.claude/` and keep working: the `apex` CLI finds either layout
-(`apex where` prints which). [MIGRATION.md](MIGRATION.md) moves a repo to the new layout.
+(`apex where` prints which). [MIGRATION.md](MIGRATION.md) covers every move: an ad-hoc or foreign AI repo onto Apex
+Orchestration, a legacy paned Multi-Agent Collaboration setup (coexist, consolidate, or move the layout only), and
+machine installs.
 
 ```text
 <repo>/.claude/
@@ -115,10 +131,11 @@ Repo-scoped verbs for managing stateless temporary worker worktrees (all accept 
 | Verb | Does |
 |---|---|
 | `worker spawn <slug> [--base b] [--skill a,b] [--item ref]` | allocates an id, creates branch `apex/<id>-<slug>`, worktree `.apex/workers/<id>/`, and `<id>.json` |
+| `worker adopt <worktree-or-branch> [--slug s] [--base b] [--skill a,b] [--item ref]` | registers an external harness worktree or branch (e.g. T3 `isolation: "worktree"`) under `.apex/workers/<id>.json` |
 | `worker list [--state s,s\|all]` | lists workers with live git status (`worktree`, `ahead`, `behind`, `dirty`) |
 | `worker status <id>` | shows one worker's manifest and live git status |
 | `worker merge <id> [--message m]` | `--no-ff` merges a worker's branch into `base` (exits `5` on conflict) |
-| `worker remove <id> [--force]` | removes a worker's worktree and branch, keeping `<id>.json` marked `removed` |
+| `worker remove <id> [--force] [--purge]` | removes an Apex-spawned worktree and branch, or untracks an adopted external worker (`--purge` deletes the external worktree and branch too); keeps `<id>.json` marked `removed` |
 | `worker prune` | removes clean `merged` workers and prunes stale worktrees |
 
 ### Skills
