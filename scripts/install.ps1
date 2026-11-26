@@ -16,7 +16,9 @@
 
 .PARAMETER Harness
   agents (default; ~/.agents/skills), claude (<ConfigDir>/skills), codex ($env:CODEX_HOME or
-  ~/.codex, then skills), custom (-SkillsDir). A comma list installs into several.
+  ~/.codex, then skills), gemini ($env:GEMINI_CONFIG_DIR or ~/.gemini/config, then skills),
+  t3 (T3 Code: the agents, claude, codex and gemini skill roots), custom (-SkillsDir).
+  A comma list installs into several.
 
 .PARAMETER SkillsDir
   Skills directory for the custom harness; implies custom.
@@ -127,12 +129,15 @@ if (-not $Harness) {
     Write-Host "  2) claude   $(Join-Path $ctx.ConfigDir 'skills')"
     Write-Host "  3) codex    $(Join-Path $codexHome 'skills')"
     Write-Host '  4) custom   a directory you name'
+    $geminiDir = if ($env:GEMINI_CONFIG_DIR) { $env:GEMINI_CONFIG_DIR } else { Join-Path (Join-Path $ctx.Home '.gemini') 'config' }
+    Write-Host "  5) gemini   $(Join-Path $geminiDir 'skills')"
+    Write-Host '  6) t3       T3 Code (agents, claude, codex, gemini)'
     $r = Read-ApexLine "Choose [$def]: "
     if (-not $r) { $r = $def }
     $picked = New-Object System.Collections.ArrayList
     foreach ($tok in $r.Split(@(',', ' '), [StringSplitOptions]::RemoveEmptyEntries)) {
       $t = $tok
-      if ($t -ceq '1') { $t = 'agents' } elseif ($t -ceq '2') { $t = 'claude' } elseif ($t -ceq '3') { $t = 'codex' } elseif ($t -ceq '4') { $t = 'custom' }
+      if ($t -ceq '1') { $t = 'agents' } elseif ($t -ceq '2') { $t = 'claude' } elseif ($t -ceq '3') { $t = 'codex' } elseif ($t -ceq '4') { $t = 'custom' } elseif ($t -ceq '5') { $t = 'gemini' } elseif ($t -ceq '6') { $t = 't3' }
       if (-not (Test-ApexHarness $t)) { Fail 64 "invalid harness choice '$tok'" }
       [void]$picked.Add($t)
     }
@@ -151,7 +156,7 @@ if (-not $Harness) {
 }
 if ($kept) { Write-Host "keeping workflow $Workflow, harness $Harness from previous install; pass -Workflow/-Harness to change" }
 
-if ($prompt -and ($Harness.Split(',') -ccontains 'claude')) {
+if ($prompt -and (($Harness.Split(',') -ccontains 'claude') -or ($Harness.Split(',') -ccontains 't3'))) {
   if (-not $style) { if (Read-ApexYesNo 'Install the Apex output style?') { $style = 'yes' } }
   if (-not $mods) { if (Read-ApexYesNo 'Install the Claude mods (token-spend, usage-footer)?') { $mods = 'yes' } }
   if (-not $ponytail) { if (Read-ApexYesNo 'Require the ponytail plugin?') { $ponytail = $true } }

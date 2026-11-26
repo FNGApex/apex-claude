@@ -165,7 +165,7 @@ func (f *fx) env() []string {
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		switch strings.ToUpper(k) {
-		case "HOME", "USERPROFILE", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME", "APEX_CLAUDE_LOG":
+		case "HOME", "USERPROFILE", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CONFIG_DIR", "XDG_CONFIG_HOME", "APEX_CLAUDE_LOG":
 			continue
 		}
 		env = append(env, kv)
@@ -669,6 +669,72 @@ func TestUninstall(t *testing.T) {
 		code, out = f.uninstall()
 		f.expect(code, out, 0)
 		f.wantMarked(dir, nil)
+	})
+}
+
+func (f *fx) geminiDir() string { return filepath.Join(f.home, ".gemini", "config", "skills") }
+
+func TestGeminiHarness(t *testing.T) {
+	each(t, "gemini-default", func(t *testing.T, f *fx) {
+		code, out := f.install("--harness", "gemini", "--yes")
+		f.expect(code, out, 0)
+		f.wantMarked(f.geminiDir(), f.conf["orchestration"])
+		f.wantMarked(f.agentsDir(), nil)
+		f.wantManifest("skills	gemini	" + f.geminiDir())
+	})
+	each(t, "gemini-env", func(t *testing.T, f *fx) {
+		g := filepath.Join(t.TempDir(), "gemini-cfg")
+		f.extraEnv = append(f.extraEnv, "GEMINI_CONFIG_DIR="+g)
+		code, out := f.install("--harness", "gemini", "--yes")
+		f.expect(code, out, 0)
+		f.wantMarked(filepath.Join(g, "skills"), f.conf["orchestration"])
+		f.wantMarked(f.geminiDir(), nil)
+	})
+}
+
+func TestT3Harness(t *testing.T) {
+	each(t, "t3", func(t *testing.T, f *fx) {
+		dirs := []string{f.agentsDir(), filepath.Join(f.claude, "skills"), filepath.Join(f.home, ".codex", "skills"), f.geminiDir()}
+		code, out := f.install("--harness", "t3", "--yes")
+		f.expect(code, out, 0)
+		for _, d := range dirs {
+			f.wantMarked(d, f.conf["orchestration"])
+			f.wantManifest("skills	t3	" + d)
+		}
+		if exists(filepath.Join(f.claude, "output-styles")) || f.claudeLog() != "" {
+			t.Fatalf("t3 installed Claude extras that were not asked for")
+		}
+		// A flagless re-run keeps t3.
+		code, out = f.install("--yes")
+		f.expect(code, out, 0)
+		if !strings.Contains(out, "harness t3 from previous install") {
+			t.Fatalf("t3 not inherited:\n%s", out)
+		}
+		for _, d := range dirs {
+			f.wantMarked(d, f.conf["orchestration"])
+		}
+		code, out = f.uninstall()
+		f.expect(code, out, 0)
+		for _, d := range dirs {
+			f.wantMarked(d, nil)
+		}
+		if exists(f.manifest()) {
+			t.Fatalf("manifest left behind")
+		}
+	})
+	each(t, "t3-dedupes-agents", func(t *testing.T, f *fx) {
+		code, out := f.install("--harness", "agents,t3", "--yes")
+		f.expect(code, out, 0)
+		n := 0
+		for _, l := range f.manifestLines() {
+			if strings.HasPrefix(l, "skills	") {
+				n++
+			}
+		}
+		if n != 4 {
+			t.Fatalf("want 4 distinct skill directories, manifest has %d", n)
+		}
+		f.wantManifest("skills	agents	" + f.agentsDir())
 	})
 }
 

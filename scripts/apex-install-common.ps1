@@ -41,7 +41,7 @@ function Get-ApexWorkflowName {
   else { 'Both workflows' }
 }
 function Test-ApexWorkflow { param([string]$W) @('orchestration', 'multi-agent', 'both') -ccontains $W }
-function Test-ApexHarness { param([string]$H) @('agents', 'claude', 'codex', 'custom') -ccontains $H }
+function Test-ApexHarness { param([string]$H) @('agents', 'claude', 'codex', 'gemini', 't3', 'custom') -ccontains $H }
 
 function Get-ApexConfSkills {
   param([string]$Name, [string]$Conf)
@@ -69,30 +69,38 @@ function Get-ApexHarnessDir {
     $c = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $Ctx.Home '.codex' }
     Join-Path $c 'skills'
   }
+  elseif ($Harness -ceq 'gemini') {
+    $g = if ($env:GEMINI_CONFIG_DIR) { $env:GEMINI_CONFIG_DIR } else { Join-Path (Join-Path $Ctx.Home '.gemini') 'config' }
+    Join-Path $g 'skills'
+  }
   else { $SkillsDir }
 }
 
 # Validates a comma list of harnesses; custom needs a skills directory.
 function Assert-ApexHarnessList {
   param([string]$Harness, [string]$SkillsDir)
-  if (-not $Harness) { Fail 64 '-Harness needs at least one of agents, claude, codex, custom' }
+  if (-not $Harness) { Fail 64 '-Harness needs at least one of agents, claude, codex, gemini, t3, custom' }
   foreach ($h in $Harness.Split(',')) {
-    if (-not (Test-ApexHarness $h)) { Fail 64 "unknown harness '$h' (agents, claude, codex, custom)" }
+    if (-not (Test-ApexHarness $h)) { Fail 64 "unknown harness '$h' (agents, claude, codex, gemini, t3, custom)" }
     if (($h -ceq 'custom') -and -not $SkillsDir) { Fail 64 '-Harness custom needs -SkillsDir DIR' }
   }
 }
 
-# One {Harness, Dir} per distinct directory, order kept.
+# One {Harness, Dir} per distinct directory, order kept. t3 (T3 Code) expands to the agents,
+# claude, codex and gemini roots, all recorded as t3.
 function Get-ApexTargets {
   param($Ctx, [string]$Harness, [string]$SkillsDir)
   $seen = @{}
   $out = New-Object System.Collections.ArrayList
   foreach ($h in $Harness.Split(',')) {
-    $d = Get-ApexHarnessDir $Ctx $h $SkillsDir
-    $k = $d.TrimEnd('\', '/')
-    if (-not $seen.ContainsKey($k)) {
-      $seen[$k] = $true
-      [void]$out.Add([pscustomobject]@{ Harness = $h; Dir = $d })
+    $presets = if ($h -ceq 't3') { @('agents', 'claude', 'codex', 'gemini') } else { @($h) }
+    foreach ($p in $presets) {
+      $d = Get-ApexHarnessDir $Ctx $p $SkillsDir
+      $k = $d.TrimEnd('\', '/')
+      if (-not $seen.ContainsKey($k)) {
+        $seen[$k] = $true
+        [void]$out.Add([pscustomobject]@{ Harness = $h; Dir = $d })
+      }
     }
   }
   $out.ToArray()

@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   Windows counterpart to uninstall.sh. Only what apex owns goes: skill folders with the
-  .apex-installed mark (in the manifest's directories, the agents, claude and codex presets,
+  .apex-installed mark (in the manifest's directories, the agents, claude, codex and gemini presets,
   and -SkillsDir), an output style whose frontmatter is `name: Apex`, mods installed as
   <mod>@apex, and the binary and manifest. Safe to run twice. Runs on Windows PowerShell 5.1
   and PowerShell 7+.
@@ -34,7 +34,7 @@ if (-not $ConfigDir -and $prev.Config) {
 
 # Every directory a skill could be in: the manifest's, the preset harnesses', and -SkillsDir.
 $dirs = @($prev.Rows | ForEach-Object { $_.Dir })
-foreach ($h in 'agents', 'claude', 'codex') { $dirs += Get-ApexHarnessDir $ctx $h '' }
+foreach ($h in 'agents', 'claude', 'codex', 'gemini') { $dirs += Get-ApexHarnessDir $ctx $h '' }
 if ($SkillsDir) { $dirs += $SkillsDir }
 foreach ($d in $dirs) { Remove-ApexMarked $d }
 

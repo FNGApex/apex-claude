@@ -38,7 +38,7 @@ Collect these facts before routing. Read only; change nothing yet.
 | Foreign handoffs | handoffs of a role defined in this repo kept outside `<state>/ledger/<a>/handoff.md`, such as `docs/handoff/*.md`. Notes files do not count |
 | Foreign role cards | skills that describe an agent role but are not Apex roles, such as a `dev-agent/` skill |
 | Other-home files | handoffs, ledgers or cards of an Agent whose home is another repo. Reported, never migrated, and not counted as foreign layout |
-| Harness | which harnesses the repo uses: ask the operator when no file shows it |
+| Harness | which harnesses the repo uses: Claude Code (`CLAUDE.md`, `.claude/`), Codex (`~/.codex`), T3 Code (the `orchestrator_capabilities` tool, or `~/.t3`) and Gemini (`~/.gemini`); ask the operator when nothing shows it |
 
 ### Claude Code facts
 

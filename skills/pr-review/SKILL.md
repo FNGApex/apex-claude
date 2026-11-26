@@ -121,6 +121,14 @@ below. `<skill>` is this skill's directory.
 12. **Clean up** after posting or discarding. If you checked out in place, `git switch <the branch you noted>`;
     otherwise `git worktree remove <scratch>/pr-<n>`.
 
+### Harness PR and delegation tools
+
+Inside a harness with built-in PR tools, such as the T3 Code harness (`pull_request_read`, `pull_request_review`,
+`link_pull_request`), prefer them over the `gh` CLI where they cover the step: read, review and link the pull request
+through them, and post only on the operator's word. Run each reviewer, judge, auditor and the editor as a read-only
+`delegate_task` with `isolation: "shared"`, mapped to a model through `<state>/tiers.md` as under Tiers. The diff, the
+slices and `review.json` are unchanged.
+
 ## Format
 
 `review.json`:

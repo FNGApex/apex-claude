@@ -1,6 +1,6 @@
 // Lints the harness-neutral docs and skills.
-//   1. Terminology: a model name, a Claude Code tool name or a `.claude/` path is allowed only on a line that says
-//      claude, legacy or harness, or under a heading that does.
+//   1. Terminology: a model name, a Claude Code or T3 Code tool name, or a `.claude/` or `.t3/` path is allowed only on
+//      a line that says claude, t3, legacy or harness, or under a heading that does.
 //   2. Reply style: the body of output-styles/apex.md equals the body of skills/reply-style/SKILL.md.
 //   3. Line endings: no checked file holds CRLF.
 // Usage: node scripts/check-terms.mjs [path ...]   (default: skills output-styles README.md docs/design)
@@ -11,9 +11,9 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const DEFAULTS = ['skills', 'output-styles', 'README.md', 'docs/design']
 const EXEMPT = new Set(['skills/apex-init/templates/tiers.md', 'skills/apex-init/templates/CLAUDE-section.md', 'MIGRATION.md'])
-const TERMS = /\b(sonnet|opus|fable|mythos|haiku|ListAgents|SendMessage|Ultracode)\b|CLAUDE\.md|\.claude\/|~\/\.claude/
-const SELF_EXCUSE = /~?\/?\.claude\/?|CLAUDE\.md/gi
-const EXCUSE = /claude|legacy|harness/i
+const TERMS = /\b(sonnet|opus|fable|mythos|haiku|ListAgents|SendMessage|Ultracode|delegate_task|orchestrator_capabilities|pull_request_review)\b|CLAUDE\.md|\.claude\/|~\/\.claude|t3_thread_\w+|\.t3\/|~\/\.t3/
+const SELF_EXCUSE = /~?\/?\.claude\/?|CLAUDE\.md|~?\/?\.t3\/?|t3_thread_\w+/gi
+const EXCUSE = /claude|t3|legacy|harness/i
 const HEADING = /^#{1,4}\s/
 
 const errors = []
@@ -50,7 +50,7 @@ for (const file of [...new Set(files)]) {
       else if (!fenced && HEADING.test(line)) heading = line
     }
     if (!TERMS.test(line) || EXCUSE.test(line.replace(SELF_EXCUSE, '')) || EXCUSE.test(heading)) return
-    fail(name, i + 1, `"${line.match(TERMS)[0]}" outside a claude, legacy or harness context: ${line.trim()}`)
+    fail(name, i + 1, `"${line.match(TERMS)[0]}" outside a claude, t3, legacy or harness context: ${line.trim()}`)
   })
 }
 
