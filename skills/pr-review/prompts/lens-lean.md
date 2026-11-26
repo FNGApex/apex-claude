@@ -1,10 +1,11 @@
-# Lens: ponytail
+# Lens: lean
 
 Review the change for bloat only: what could be deleted or made smaller with the same result. Correctness belongs to
 another lens.
 
-If the `ponytail:ponytail-review` skill is available, load it and apply it to your slice. Otherwise walk this ladder
-for each thing the change adds and report where an earlier rung would have held:
+If your harness has a bloat-review skill, load it and apply it to your slice (in Claude Code, the optional
+`ponytail:ponytail-review` skill is one example). Otherwise walk this ladder for each thing the change adds and
+report where an earlier rung would have held:
 
 1. It does not need to exist: a speculative option, a config for a value that never changes, scaffolding for later.
 2. The codebase already has it: a helper, type or pattern a few files away.
