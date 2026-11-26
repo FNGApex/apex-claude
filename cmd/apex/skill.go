@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"apex/internal/exit"
 	"apex/internal/layout"
@@ -94,7 +95,7 @@ func skillCmd(dir string, args []string, stdout, stderr io.Writer) error {
 			return printJSON(stdout, out)
 		}
 		for _, s := range out {
-			fmt.Fprintf(stdout, "%-24s  %-12s  %-11s  %s\n", s.Ref(), s.Kind, s.Source, s.Description)
+			fmt.Fprintf(stdout, "%-24s  %-12s  %-11s  %s\n", s.Ref(), s.Kind, s.Source, truncate(s.Description, 80))
 		}
 		fmt.Fprintf(stdout, "%d skills\n", len(out))
 		return nil
@@ -113,7 +114,7 @@ func skillCmd(dir string, args []string, stdout, stderr io.Writer) error {
 			return printJSON(stdout, hits)
 		}
 		for _, h := range hits {
-			fmt.Fprintf(stdout, "%3d  %-24s  %-12s  %s\n", h.Score, h.Ref(), h.Kind, h.Description)
+			fmt.Fprintf(stdout, "%3d  %-24s  %-12s  %s\n", h.Score, h.Ref(), h.Kind, truncate(h.Description, 80))
 		}
 		fmt.Fprintf(stdout, "%d matches\n", len(hits))
 		return nil
@@ -217,4 +218,12 @@ func checkSkills(dir, root string, pos []string, asJSON bool, stdout io.Writer, 
 		return fmt.Errorf("%w: %d skill schema problem(s)", exit.Corrupt, len(problems))
 	}
 	return nil
+}
+
+func truncate(s string, max int) string {
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:max-3]) + "..."
 }

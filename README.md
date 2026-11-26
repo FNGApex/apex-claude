@@ -13,7 +13,8 @@ Two workflows ship:
 - **Multi-Agent Collaboration** (legacy). User-defined Agents, each with its own ledger, handoff and private notes,
   working one item at a time and messaging peers. It is kept for repos that already run it.
 
-The contract is [docs/design/agents.md](docs/design/agents.md).
+The contracts are [docs/design/orchestration.md](docs/design/orchestration.md) (Orchestration-based Workflow) and
+[docs/design/agents.md](docs/design/agents.md) (shared state and legacy Multi-Agent Collaboration).
 
 ## Install
 
@@ -29,8 +30,10 @@ make uninstall
 ```
 
 On Windows, without `make` (PowerShell 5.1 or 7+): `pwsh scripts/install.ps1`. On Linux and macOS, without `make`:
-`scripts/install.sh`. Both take `--help` (`-Help` in PowerShell) for the flags that pick the workflow, the harness
-preset and the install locations.
+`scripts/install.sh`. Key flags include `--workflow` (`orchestration|multi-agent|both`), `--harness`
+(`agents|claude|codex|custom`), `--skills-dir`, `--prefix`, `--config-dir`, `--with-output-style`,
+`--with-claude-mods`, `--check-ponytail`, `--custom` / `--interactive`, `--yes`, `--check`, and `--bin`
+(`-Workflow`, `-Harness`, etc. in PowerShell; pass `--help` / `-Help` for the full list).
 
 **Harness presets** decide where skills and the reply style go:
 
@@ -67,9 +70,9 @@ An adopted repo holds its state under `.apex/` and its skills under `.agents/ski
     LIVE.md                     shared notes: facts true for everyone working in this repo
     git.md                      this repo's commit, push and PR conventions
     tiers.md                    which model runs each capability tier
-    ledger/NNN.md               one item per file, never deleted
-    orchestrator/               the Orchestrator's handoff and private notes
-    workers/<id>/               one worker: its worktree, branch record and report
+    ledger/orchestrator/        NNN.md items (never deleted), handoff.md, concurrent marker
+    orchestrator/               private to the checkout: LIVE.md, RULES.md, reminder skills
+    workers/                    git-ignored: <id>.json manifests and <id>/ temporary worktrees
   .agents/skills/
     orchestrator/SKILL.md       the Orchestrator's role card
     <starter or domain>/        worker skills: one folder per kind of work
@@ -90,7 +93,8 @@ Repos adopted before this layout keep everything under `.claude/` and keep worki
 
 ## The `apex` CLI
 
-All verbs run in the repo and read its state through `apex where`.
+All verbs run in the repo and resolve state paths through `apex where`. Every ledger verb takes `--agent <name>`
+(`--agent orchestrator` in the Orchestration-based Workflow, or a named Agent in Multi-Agent Collaboration).
 
 ### Ledger
 
@@ -102,29 +106,31 @@ All verbs run in the repo and read its state through `apex where`.
 | `close <id> <reason>` | to closed |
 | `reopen <id>` | in-progress or closed to open |
 | `retitle <id> <title>` | replaces an item's title, any status |
-| `where [--agent <a>] [--json]` | prints where the repo's Apex state lives; `--agent` narrows it to one legacy Agent |
-
-In the legacy layout every ledger verb takes `--agent <name>`.
+| `where [--agent <a>] [--json]` | prints where the repo's Apex state lives; `--agent` narrows it to one Agent |
 
 ### Workers
 
+Repo-scoped verbs for managing stateless temporary worker worktrees (all accept `--json`):
+
 | Verb | Does |
 |---|---|
-| `worker spawn <id> <slug>` | creates a temporary worktree and branch for a worker on a ledger item |
-| `worker list` | lists workers |
-| `worker status <id>` | shows one worker: state, branch, unmerged commits |
-| `worker merge <id>` | merges a finished worker's branch |
-| `worker remove <id>` | removes a worker's worktree and record |
-| `worker prune` | removes the workers that are merged and finished |
+| `worker spawn <slug> [--base b] [--skill a,b] [--item ref]` | allocates an id, creates branch `apex/<id>-<slug>`, worktree `.apex/workers/<id>/`, and `<id>.json` |
+| `worker list [--state s,s\|all]` | lists workers with live git status (`worktree`, `ahead`, `behind`, `dirty`) |
+| `worker status <id>` | shows one worker's manifest and live git status |
+| `worker merge <id> [--message m]` | `--no-ff` merges a worker's branch into `base` (exits `5` on conflict) |
+| `worker remove <id> [--force]` | removes a worker's worktree and branch, keeping `<id>.json` marked `removed` |
+| `worker prune` | removes clean `merged` workers and prunes stale worktrees |
 
 ### Skills
 
+Repo-scoped verbs for discovering and checking skills across repo, env, and user roots (all accept `--json`):
+
 | Verb | Does |
 |---|---|
-| `skill list` | lists the skills of the repo |
-| `skill search <query>` | finds a skill by its name or description |
-| `skill show <name>` | prints one skill |
-| `skill check` | validates every skill's frontmatter |
+| `skill list [--kind k] [--tag t] [--source s]` | lists discovered skills |
+| `skill search <query...> [--kind k] [--tag t] [--limit n]` | ranks matching skills by name, tags, triggers, description, and domain |
+| `skill show <name\|domain/name> [--body]` | prints one skill's metadata and path (`--body` appends the markdown body) |
+| `skill check [<path-or-name>]` | validates skill frontmatter (`name`, `description`, `kind`, `tier`) |
 
 ### Exit codes
 
@@ -134,8 +140,8 @@ In the legacy layout every ledger verb takes `--agent <name>`.
 | 1 | not found |
 | 2 | environment |
 | 3 | illegal transition |
-| 4 | corrupt ledger |
-| 5 | conflict |
+| 4 | corrupt state (ledger, worker manifest, or skill frontmatter) |
+| 5 | merge conflict |
 | 64 | usage |
 
 ## Skills

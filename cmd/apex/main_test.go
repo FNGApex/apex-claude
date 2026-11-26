@@ -389,4 +389,18 @@ func TestSkillVerbs(t *testing.T) {
 	if code, _, _ := apex(t, root, "skill", "check", "ghost"); code != 1 {
 		t.Fatalf("check of an unknown name: exit %d, want 1", code)
 	}
+	longDir := filepath.Join(root, ".agents", "skills", "long-desc")
+	if err := os.MkdirAll(longDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	longDesc := strings.Repeat("x", 100)
+	if err := os.WriteFile(filepath.Join(longDir, "SKILL.md"), []byte("---\nname: long-desc\ndescription: "+longDesc+"\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ := apex(t, root, "skill", "list"); !strings.Contains(out, strings.Repeat("x", 77)+"...") || strings.Contains(out, longDesc) {
+		t.Fatalf("long description must truncate in human list:\n%s", out)
+	}
+	if _, out, _ := apex(t, root, "skill", "show", "long-desc"); !strings.Contains(out, longDesc) {
+		t.Fatalf("show must keep full description:\n%s", out)
+	}
 }

@@ -12,6 +12,7 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const DEFAULTS = ['skills', 'output-styles', 'README.md', 'docs/design']
 const EXEMPT = new Set(['skills/apex-init/templates/tiers.md', 'skills/apex-init/templates/CLAUDE-section.md', 'MIGRATION.md'])
 const TERMS = /\b(sonnet|opus|fable|mythos|haiku|ListAgents|SendMessage|Ultracode)\b|CLAUDE\.md|\.claude\/|~\/\.claude/
+const SELF_EXCUSE = /~?\/?\.claude\/?|CLAUDE\.md/gi
 const EXCUSE = /claude|legacy|harness/i
 const HEADING = /^#{1,4}\s/
 
@@ -48,7 +49,7 @@ for (const file of [...new Set(files)]) {
       if (/^\s*(```|~~~)/.test(line)) fenced = !fenced
       else if (!fenced && HEADING.test(line)) heading = line
     }
-    if (!TERMS.test(line) || EXCUSE.test(line) || EXCUSE.test(heading)) return
+    if (!TERMS.test(line) || EXCUSE.test(line.replace(SELF_EXCUSE, '')) || EXCUSE.test(heading)) return
     fail(name, i + 1, `"${line.match(TERMS)[0]}" outside a claude, legacy or harness context: ${line.trim()}`)
   })
 }
