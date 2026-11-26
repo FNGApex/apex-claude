@@ -1,20 +1,22 @@
 ---
 name: "{{agent}}"
 description: "{{Agent}} Agent. {{one-line role}} Invoke at session start to work as the {{Agent}} Agent."
+metadata:
+  kind: agent
 ---
 
 # {{Agent}} Agent
 
-Before anything else, load `agent-protocol` and run its Startup. The other pre-loads are
-`git-discipline` and `ponytail:ponytail`.
+Before anything else, load `agent-protocol` and run its Startup. It loads `state-protocol`. The other pre-load is
+`git-discipline`.
 
-| Owns | Path |
+| Owns | Path; `apex where --agent {{agent}}` prints the real one |
 |---|---|
-| Ledger | `.claude/ledger/{{agent}}/`, through `apex <verb> --agent {{agent}}` |
-| Handoff | `.claude/ledger/{{agent}}/handoff.md` |
-| Notes, rules, reminders | `.claude/apex/{{agent}}/` |
+| Ledger | `.apex/ledger/{{agent}}/`, through `apex <verb> --agent {{agent}}` |
+| Handoff | `.apex/ledger/{{agent}}/handoff.md` |
+| Notes, rules, reminders | `.apex/{{agent}}/` |
 
-Shared notes for every Agent in this repo: `.claude/LIVE.md`.
+Shared notes for every role in this repo: `.apex/LIVE.md`.
 
 ## Role
 
