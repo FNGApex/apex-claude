@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// Main returns the main checkout that owns dir: the directory whose .claude/ holds every Agent's state, even when dir
+// Main returns the main checkout that owns dir: the directory whose .apex/ or .claude/ holds every Agent's state, even when dir
 // is inside a linked worktree. Outside a git repository it returns dir itself.
 func Main(dir string) (string, error) {
 	common, err := gitOut(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -34,7 +34,12 @@ func Main(dir string) (string, error) {
 	if gitDir != common {
 		return "", fmt.Errorf("%s is a linked worktree of a repository with no main checkout (%s)", dir, common)
 	}
-	return gitOut(dir, "rev-parse", "--show-toplevel")
+	top, err := gitOut(dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	// Git prints forward slashes on Windows; Clean gives the native form every other path here uses.
+	return filepath.Clean(top), nil
 }
 
 var errNotRepo = errors.New("not a git repository")

@@ -1,212 +1,65 @@
 ---
 name: agent-protocol
-description: The shared protocol every Apex Agent follows. Covers session startup from the handoff, working the ledger one item at a time through the apex binary, the handoff format and freshness check, upkeep of the Agent's private notes, rules and reminder skills, and collaboration with peer Agents. Pre-loaded by an Agent's role card; use whenever an Agent starts a session, picks, works or closes a ledger item, or writes its handoff.
+description: The protocol a Collaboration Agent follows in Multi-Agent Collaboration, the legacy Apex workflow where named Agents each own a ledger and work as peers. Loads state-protocol for startup, ledger, handoff and notes, then covers picking and working one item at a time, approach modes, review, closing, and peer messaging and filing. Pre-loaded by an Agent's skill; new setups use orchestrator-protocol instead. Use whenever a Collaboration Agent starts a session, works a ledger item or talks to a peer.
+metadata:
+  kind: protocol
 ---
 
-# Agent protocol
+# Agent protocol: Multi-Agent Collaboration (legacy workflow)
 
-You are an Agent: a role card at `.claude/skills/<agent>/SKILL.md` that owns one ledger and one handoff. `<agent>` below
-is your role card's directory name.
+You are a Collaboration Agent: a skill with `metadata.kind: agent` that owns one ledger and one handoff and works with
+peer Agents. New setups use the Orchestration-based Workflow and `orchestrator-protocol`; this protocol stays for
+repos that run named peer Agents.
 
-```
-<repo>/.claude/
-  skills/<agent>/SKILL.md      role card, user-owned; never edit it
-  apex/<agent>/                your private folder; its .gitignore holds *, so nothing in it is tracked
-    LIVE.md                    your live notes; you own and rewrite them
-    RULES.md                   what the operator allows you; written only from the operator's words
-    skills/<topic>.md          your reminder skills: traps, good-to-knows, do's and don'ts
-  LIVE.md                      shared notes for every Agent in this repo; any Agent edits them
-  ledger/<agent>/NNN.md        one item per file, never deleted
-  ledger/<agent>/handoff.md    your handoff, overwritten each time
-  ledger/<agent>/per-ticket    optional marker: one ledger per ticket, each in ledger/<agent>/<ticket>/
-```
-
-`<repo>` is always the main checkout, including when you work in a worktree. Find it with:
-
-```bash
-dirname "$(git rev-parse --path-format=absolute --git-common-dir)"
-```
-
-## apex
-
-Every stateful call passes `--agent <agent>` explicitly. There is no default Agent. Subagents and Ultracode workers
-never run stateful verbs.
-
-| Call | Does |
-|---|---|
-| `apex add <task\|followup> <title> --agent <a>` | files a new open item, prints its path |
-| `apex list [--status s,s\|all] [--kind task\|followup] --agent <a>` | lists items; default status `in-progress,open`. The summary line counts every status for the selected `--kind`; `--status` filters only the rows. A per-ticket ledger first prints `ledger: <dir>` |
-| `apex start <id> --agent <a>` | open to in-progress, prints the item path |
-| `apex close <id> <reason> --agent <a>` | to closed, from open or in-progress, prints the item path |
-| `apex reopen <id> --agent <a>` | in-progress or closed back to open, prints the item path |
-| `apex retitle <id> <title> --agent <a>` | replaces the item's title in any status, prints the item path |
-
-| Exit | Meaning | Response |
-|---|---|---|
-| 0 | ok | continue |
-| 1 | not found | check the id and the `--agent` value |
-| 2 | environment | read the message, stop and report |
-| 3 | illegal transition | read the message; usually another item is already in progress |
-| 4 | corrupt ledger | stop and report the file; never hand-edit frontmatter to fix it |
-| 64 | usage | fix the call |
-
-Your ledger directory, `<ledger>` below, is `<repo>/.claude/ledger/<agent>/`, unless that directory holds a file named
-`per-ticket`. Then every verb works on the ledger of the ticket the current branch names (`ENG-42` from
-`feat/eng-42-x`, else the branch name), and `apex list` prints its directory on a `ledger: <dir>` line; that is
-`<ledger>`. Each ticket ledger has its own items, numbered from 001, its own in-progress item and its own handoff. On a
-detached HEAD or outside git you get the mono ledger. Only the operator creates or deletes `per-ticket`.
-
-The binary owns item frontmatter. You edit only the body sections. Fix a wrong title with `apex retitle`, and a
-wrong close reason with `apex reopen` then `apex close`.
-
-## Startup
-
-1. Read `<repo>/.claude/apex/<agent>/LIVE.md`, `RULES.md` and every `skills/*.md` there with file reads. A missing
-   file is empty; a tracked `<repo>/.claude/skills/<agent>/LIVE.md` means the Agent is not migrated: tell the operator
-   to run `/apex-init`, which moves it.
-2. Read `<repo>/.claude/LIVE.md` with a file read, if it exists.
-3. Load every skill your role card lists.
-4. Run `apex list --agent <agent>` to find `<ledger>`, then read `<ledger>/handoff.md`. If it does not exist, skip to
-   step 6.
-5. Check freshness. The handoff is stale when any of these holds:
-
-   | Check | Command |
-   |---|---|
-   | recorded `checkout` no longer exists | `test -d <checkout>` |
-   | `branch` differs | `git -C <checkout> rev-parse --abbrev-ref HEAD` |
-   | code outside `.claude/` differs from `head` | `git -C <checkout> diff --quiet <head> HEAD -- . ':(exclude).claude'` exits non-zero |
-
-   An unknown `head` makes the diff exit 128 with `fatal: bad object`: that is stale, not a failed command.
-   A stale handoff is still read. Staleness means State may be wrong: reconcile it against what changed
-   (`git diff --stat <head> HEAD`, `git status`) before trusting it.
-6. Run `apex list --agent <agent>`, with or without a handoff.
+Load `state-protocol` first. It holds paths (`apex where --agent <agent>`), the ledger verbs and exit codes, the
+markers, the item body and close prefixes, the handoff format and freshness check, and your notes. Run its Startup.
 
 ## Pick the next item
 
-`apex list --agent <agent>`. Resume the in-progress item if there is one; at most one exists. Otherwise take what the
-user names or the handoff's Next. New work the user asks for gets filed first with `apex add` and then worked like any
-item.
+`apex list --agent <agent>`. Resume the in-progress item if there is one. Otherwise take what the operator names or the
+handoff's Next. New work the operator asks for gets filed first with `apex add` and then worked like any item.
 
 ## Work an item
 
-One item at a time. Close the current one, or return it to open with `apex reopen <id> --agent <agent>`, before
-starting another.
+One item at a time, unless your ledger holds `concurrent`. Close the current one, or return it to open with
+`apex reopen <id> --agent <agent>`, before starting another.
 
 1. `apex start <id> --agent <agent>` (skip when resuming an in-progress item).
-2. Fill `## Goal`: a `From:` line naming who asked (`user`, a parent item id such as `003`, or `repo:agent/004` for a
-   peer, where `repo` is the peer's home repo directory name), then done-criteria that can be checked by running or
-   reading something.
+2. Fill `## Goal`: a `From:` line and checkable done-criteria, as `state-protocol` describes.
 3. Fill `## Approach` with one of these and the reason:
 
    | Mode | When |
    |---|---|
    | direct | the change is small, or the context it needs is already in this session |
    | subagent | a self-contained slice that benefits from a fresh context |
-   | ultracode | the item splits into independent slices that run in parallel |
+   | worker | one change in a temporary worktree: follow the Dispatch, Watch and Merge back sections of `orchestrator-protocol` |
+   | fan-out | independent slices run by parallel workers, one worktree each, as in `orchestrator-protocol` |
 
-   Subagents and Ultracode workers get the item's Goal. They report back; they own no
-   state.
-4. Append one line to `## Log` per step taken, as you go. The Log is the crash cursor: after an interruption, the last
-   line tells you where to resume. Cite a peer's item in full: `<repo>:<agent>/NNN`.
-5. Review the result against the Goal's done-criteria, run `/ponytail:ponytail-review` on the result, and act on its
-   findings. If that skill is unavailable, review against the ponytail ladder yourself and say so in the Log.
-6. Update your notes when you learned something durable: a state fact to `LIVE.md`, a trap or a do or don't to a
-   reminder skill, a fact every Agent needs to `<repo>/.claude/LIVE.md`. Skip it when nothing durable came up.
+   Subagents and workers get the item's Goal. They report back; they own no state.
+4. Append one line to `## Log` per step taken, as you go.
+5. Review the result against the Goal's done-criteria. Run a review skill when the repo provides one (`apex skill
+   search review`) and act on its findings; otherwise review by hand for correctness, scope and needless code, and say
+   which in the Log.
+6. Update your notes when you learned something durable, per `state-protocol`. Skip it when nothing durable came up.
 7. Write `## Outcome`.
 8. `apex close <id> "done: <one line>" --agent <agent>`.
 9. Run the commit check in `git-discipline`, silently. When it passes, commit the item's work: the code plus the
-   pending `.claude/` changes. In a worktree, the code commits in the worktree and the `.claude/` changes commit in
-   `<repo>`. When it fails, commit nothing; an item with no code leaves its `.claude/` changes for a later commit.
-10. Rewrite `handoff.md` after step 9, so `head` covers any commit made there; State names work left uncommitted.
-    The handoff rides in a later commit.
-
-Every close reason starts with one of these prefixes:
-
-| Prefix | When |
-|---|---|
-| `done: ` | the Goal is met |
-| `dropped: ` | the item will not be done; say why |
-| `split: <ids>` | the item was replaced by children |
-
-### Drop an item
-
-Close it straight from open, without starting it: `apex close <id> "dropped: <why>" --agent <agent>`. Its ledger
-change rides in a later commit.
-
-### Split an item
-
-When an item is too big for one pass:
-
-1. `apex add` each child. Give each child a `From: <parent id>` Goal line.
-2. `apex close <parent> "split: <ids>" --agent <agent>`, listing the ids the adds printed, for example
-   `split: 008-010` or `split: 008, 011`.
-
-### Worktrees and other repos
-
-`apex` resolves your state from a worktree too. Work in another repo keeps state in your home repo; note that repo's
-path and what changed there in the item's Log.
-
-## Handoff
-
-Overwrite `<ledger>/handoff.md` after every close and whenever you stop mid-item. Fill the
-frontmatter by running the commands in the checkout you worked in; `head` is always the full SHA.
-
-The frontmatter keys and the four headings are literal; replace each `<...>` with its value.
-
-```
----
-checkout: <absolute path of the checkout worked in>
-branch: <output of git rev-parse --abbrev-ref HEAD>
-head: <output of git rev-parse HEAD>
----
-## Startup
-invoke the Agent skill (reads its private folder and .claude/LIVE.md); apex list --agent <agent>
-
-## State
-<current item and where it stopped; uncommitted work>
-
-## Next
-<the item to take next, and why>
-
-## Open threads
-<questions and waits that outlive the current item>
-```
-
-The Startup line is literal apart from `<agent>`.
-
-## Notes
-
-Your notes replace memory. Keep them current and short: rewrite or delete stale entries instead of appending
-contradictions. They hold what outlives one item; per-item progress belongs in the item's Log.
-
-| File | Holds | Who edits |
-|---|---|---|
-| `<repo>/.claude/LIVE.md` | facts every Agent in this repo needs: build steps, repo conventions, shared traps | any Agent |
-| `<repo>/.claude/apex/<agent>/LIVE.md` | facts about the current state that only your role needs | you |
-| `<repo>/.claude/apex/<agent>/RULES.md` | what the operator has decided you may do | you, only from the operator's words |
-| `<repo>/.claude/apex/<agent>/skills/<topic>.md` | reminders on how to do your work: traps, good-to-knows, do's and don'ts | you |
-
-A fact goes in one file, never both. Move it to `<repo>/.claude/LIVE.md` once a second Agent needs it.
-
-**Rules.** Each line starts with `Allowed:` and grants one specific action: what, on what, when. No date, no
-history, no prohibition, no trap; a "don't" goes in a reminder skill. Add, change or delete a rule only when the
-operator decides it. What no rule allows needs the operator's approval.
-
-**Reminder skills.** One topic per file, lines starting `Do:`, `Don't:`, `Trap:` or `Good to know:`. A reminder never
-overrides your role card or this protocol. It is a plain file you read, not a Claude Code skill.
+   pending state-directory changes. In a worktree, the code commits in the worktree and the state-directory changes
+   commit in `<root>`. When it fails, commit nothing.
+10. Rewrite the handoff after step 9, so `head` covers any commit made there; State names work left uncommitted.
 
 ## Collaboration
 
-- Find peers with `ListAgents` and talk to them with `SendMessage`.
-- To give a peer work, file it into the peer's ledger. Get the peer's home repo path from the peer with `SendMessage`
-  or from a `LIVE.md`, then run `cd <peer home repo> && apex add <kind> <title> --agent <peer>` as one command; `apex`
-  has no directory flag. Write `From: <your repo>:<you>/<your item id>` in its Goal, then tell the peer with
-  `SendMessage` if `ListAgents` shows it running.
+Peers talk through the harness's peer-messaging primitive: one call finds running peers, another sends a message.
+
+- To give a peer work, file it into the peer's ledger. Get the peer's home repo path from the peer or from a
+  `LIVE.md`, then run `cd <peer home repo> && apex add <kind> <title> --agent <peer>` as one command; `apex` has no
+  directory flag. Write `From: <your repo>:<you>/<your item id>` in its Goal, then message the peer if it is running.
 - When a peer's message asks you for something, what you do depends on `apex list --agent <agent>`:
 
   | Your state | Do |
   |---|---|
-  | no item in progress | act on the request and reply with `SendMessage` right away |
+  | no item in progress | act on the request and reply right away |
   | an item in progress | `apex add <kind> <title> --agent <agent>`, write `From: <peer repo>:<peer>/<peer item id>` in its Goal, reply with the new item's id, and return to your item |
 
   A message that announces an item the peer already filed in your ledger is not filed again.
@@ -215,3 +68,7 @@ overrides your role card or this protocol. It is a plain file you read, not a Cl
   only when you need the operator's answer.
 - Only the owner starts or closes an item. A peer only files: it never runs `start`, `close`, `reopen` or `retitle`
   with another Agent's name.
+
+### Claude Code harness
+
+`ListAgents` finds running peers and `SendMessage` reaches them.

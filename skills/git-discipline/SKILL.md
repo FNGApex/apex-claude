@@ -1,23 +1,28 @@
 ---
 name: git-discipline
-description: Commit, push and PR rules for an Apex Agent. Reads the repo's .claude/git.md first, then applies default permissions (commit on approval, push on approval, PR only on request), the silent check that decides whether a commit is worth making, explicit-path staging, and Conventional Commits message rules. Use before any git commit, push, or PR, and when writing a commit message or PR body.
+description: Commit, push, PR and worker merge-back rules for every Apex role. Reads the repo's git.md from the state directory first, then applies default permissions (commit on approval, push on approval, PR only on request, merge-back on request or policy), the silent check that decides whether a commit is worth making, explicit-path staging, worker branch rules, and Conventional Commits message rules. Use before any git commit, push, PR or worker merge, and when writing a commit message or PR body.
+metadata:
+  kind: protocol
 ---
 
 # Git discipline
 
-## 1. Read `.claude/git.md` first
+## 1. Read `<state>/git.md` first
 
-It holds this repo's conventions: commit and push permissions, message format, branch naming, ticket prefixes,
-remotes and PR template. Anything it states overrides the defaults below; anything it leaves out falls back to them. If
-the file is missing, use the defaults.
+`apex where` prints its path as `git`: `.apex/git.md`, or `.claude/git.md` in a legacy layout. It holds this repo's
+conventions: commit, push and worker merge permissions, message format, branch naming, ticket prefixes, remotes and PR
+template. Anything it states overrides the defaults below; anything it leaves out falls back to them. If the file is
+missing, use the defaults.
 
 ## 2. Permissions
 
 | Action | Default |
 |---|---|
-| Commit | on the operator's approval, or automatically when `.claude/git.md` or a `RULES.md` line allows it |
-| Push | on the operator's approval, or when a line in the Agent's `RULES.md` allows that push; the `Push` row of `.claude/git.md` adds rules, never permission |
+| Commit | on the operator's approval, or automatically when `<state>/git.md` or a `RULES.md` line allows it |
+| Push | on the operator's approval, or when a line in the role's `RULES.md` allows that push; the `Push` row of `<state>/git.md` adds rules, never permission |
 | PR | only when the operator asks for one |
+| Worker merge-back | on the operator's request, or after verification when `<state>/git.md` says `Worker merge: after verification` or a `RULES.md` line allows it |
+| Commit on a worker branch | always allowed to the worker, without approval (section 7) |
 
 - Never remind the operator to open a PR.
 - Say nothing about pushing until Sign off.
@@ -25,7 +30,7 @@ the file is missing, use the defaults.
 ## 3. When to commit
 
 Commit less. A commit is a unit someone would review or revert on its own, never a save point. `Commit: automatically`
-in `.claude/git.md` removes the question to the operator; it does not mean committing more often.
+in `<state>/git.md` removes the question to the operator; it does not mean committing more often.
 
 Consider a commit only at these moments. An edit, a passing test or a new Log line is not one of them.
 
@@ -39,8 +44,8 @@ At that moment, commit only when all of these hold:
 
 1. **Whole.** The checks pass and no step still to come will change the same files.
 2. **Stands alone.** Its subject needs no "wip", "part 2", "more" or "fix previous commit".
-3. **More than bookkeeping.** `.claude/` changes alone (ledger, handoff, `.claude/LIVE.md`) wait for the next commit that
-   carries code, or for Sign off.
+3. **More than bookkeeping.** State-directory changes alone (ledger, handoff, `<state>/LIVE.md`) wait for the next
+   commit that carries code, or for Sign off.
 
 When one fails, do not commit. The work stays in the tree and joins the next commit; the handoff's State names it as
 uncommitted.
@@ -51,11 +56,12 @@ approval, and only after the check passed. A direct order from the operator to c
 
 ## 4. Staging
 
-An item's commit carries its code plus its `.claude/` changes: the ledger item, `.claude/LIVE.md` and the handoff
-written after the previous commit. `.claude/apex/` is never staged: it ignores itself. In a worktree, commit the code there and the `.claude/` changes in the main checkout.
+An item's commit carries its code plus its state-directory changes: the ledger item, `<state>/LIVE.md` and the handoff
+written after the previous commit. A private folder and `<state>/workers/` are never staged: they ignore themselves.
+In a worktree, commit the code there and the state-directory changes in the main checkout.
 
 An item filed into a peer's ledger is the filer's change: the filer commits it in the peer's repo, in its own commit.
-That is the one `.claude/`-only commit that does not wait (section 3).
+That is the one state-directory-only commit that does not wait (section 3).
 
 Stage by explicit path. Never `git add -A`, `git add .`, or `git commit -a`.
 
@@ -93,7 +99,7 @@ Never write:
 
 ## 6. PR title and body
 
-Only when the operator asked for a PR. Use the PR template from `.claude/git.md` if it names one.
+Only when the operator asked for a PR. Use the PR template from `<state>/git.md` if it names one.
 
 - **Title:** Conventional Commits prefix, imperative, 70 chars max, no trailing period. A squash merge turns the title
   into the commit subject.
@@ -101,3 +107,19 @@ Only when the operator asked for a PR. Use the PR template from `.claude/git.md`
   obvious one, any decision a reviewer would flag as a mistake.
 - **Cut:** file lists, test plans, dependency bumps, headings on a short body, local detail (branch, worktree,
   scratchpad paths, iteration counts), references a stranger cannot open, AI attribution.
+
+## 7. Worker branches and upstream merge-back
+
+`apex worker spawn` gives each worker a temporary branch `apex/<id>-<slug>` in its own worktree.
+
+| Who | May | Never |
+|---|---|---|
+| Worker | commit on its own `apex/` branch without approval, by explicit path, in section 5 format; merge or rebase `<base>` into its branch when the brief says `Sync: yes` | switch branches, touch the main checkout, merge into `<base>` or upstream, push, open a PR, unless the brief says so in words |
+| Orchestrator | merge back with `apex worker merge <id>` (a `--no-ff` merge into `<base>`) per section 2; remove and prune workers | resolve a merge conflict in the base checkout, or hand-merge a worker branch with `git merge` |
+
+- Section 3 binds the merge-back, not the worker's commits: the merge commit is the reviewable unit, so its message
+  follows section 5 (`apex worker merge <id> --message "<type>(<scope>): <summary>"`).
+- `apex worker merge` exits `5` on a conflict and aborts cleanly. The conflict is resolved by a sync step in the
+  worker's worktree, then the merge is retried.
+- `apex/` branches are temporary: never pushed, never reported as unpushed at Sign off, deleted by
+  `apex worker remove` or `prune`.
