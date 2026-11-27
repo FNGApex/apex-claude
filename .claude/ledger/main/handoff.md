@@ -1,7 +1,7 @@
 ---
 checkout: C:/Users/drgor/Documents/GitHub/apex-claude
 branch: generalization
-head: f0c95b89492d6ecd8333612ee5ea6aeea02b2e97
+head: 57a8f8c5ed4234e49965b423262d66ea94c5d97e
 ---
 ## Startup
 invoke the Agent skill (reads its private folder and .claude/LIVE.md); apex list --agent main
